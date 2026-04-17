@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 )
 
@@ -24,18 +25,18 @@ type WSClient struct {
 
 type WSHub struct {
 	clients    map[string]*WSClient
-	register  chan *WSClient
+	register   chan *WSClient
 	unregister chan *WSClient
-	broadcast chan []byte
-	mu        sync.RWMutex
+	broadcast  chan []byte
+	mu         sync.RWMutex
 }
 
 func NewWSHub() *WSHub {
 	return &WSHub{
 		clients:    make(map[string]*WSClient),
-		register:  make(chan *WSClient),
+		register:   make(chan *WSClient),
 		unregister: make(chan *WSClient),
-		broadcast: make(chan []byte),
+		broadcast:  make(chan []byte),
 	}
 }
 
@@ -92,7 +93,8 @@ func (h *WSHub) SendTo(nodeID string, msg Message) {
 
 func WSHandler(hub *WSHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		nodeID := r.PathValue("node_id")
+		vars := mux.Vars(r)
+		nodeID := vars["node_id"]
 		if nodeID == "" {
 			http.Error(w, "node_id required", http.StatusBadRequest)
 			return
