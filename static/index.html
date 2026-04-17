@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>ZeroPhone</title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<style>
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
+		h1 { color: #58a6ff; margin-bottom: 20px; }
+		.container { max-width: 800px; margin: 0 auto; }
+		.node-list { display: flex; flex-direction: column; gap: 8px; }
+		.node { display: flex; align-items: center; padding: 12px 16px; background: #161b22; border-radius: 6px; border: 1px solid #30363d; }
+		.node.online { border-left: 3px solid #3fb950; }
+		.node.offline { border-left: 3px solid #6e7681; }
+		.node-id { font-family: monospace; font-size: 14px; color: #8b949e; }
+		.node-name { font-size: 16px; font-weight: 500; margin-left: 12px; }
+		.status { margin-left: auto; font-size: 12px; padding: 4px 8px; border-radius: 12px; }
+		.status.online { background: #238636; color: white; }
+		.status.offline { background: #484f58; color: white; }
+		.call-btn { margin-left: 12px; padding: 6px 12px; background: #238636; color: white; border: none; border-radius: 4px; cursor: pointer; }
+		.call-btn:hover { background: #2ea043; }
+		.call-btn:disabled { background: #484f58; cursor: not-allowed; }
+		.endpoint { font-family: monospace; background: #161b22; padding: 12px; border-radius: 6px; margin-top: 20px; }
+		.endpoint h3 { color: #58a6ff; margin-bottom: 8px; }
+		.endpoint code { display: block; color: #8b949e; font-size: 13px; }
+		.incoming { color: #f0883e; font-weight: bold; margin-top: 10px; }
+		.active-call { margin-top: 20px; padding: 12px; background: #161b22; border-radius: 6px; border: 1px solid #3fb950; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<h1>ZeroPhone</h1>
+		<h2>Nodes</h2>
+		<div class="node-list" id="nodes"></div>
+
+		<div id="activeCall" class="active-call" style="display:none;">
+			<h3>Active Call with <span id="activeWith"></span></h3>
+			<button onclick="endCall()">End Call</button>
+		</div>
+
+		<div id="incoming" class="incoming" style="display:none;">
+			Incoming call from <span id="fromNode"></span>
+			<button onclick="answerCall()">Answer</button>
+			<button onclick="rejectCall()">Reject</button>
+		</div>
+
+		<div class="endpoint">
+			<h3>REST API</h3>
+			<code>POST /register - {"id": "x", "name": "x", "capabilities": ["audio"]}</code>
+			<code>POST /heartbeat?node_id=x</code>
+			<code>GET /nodes</code>
+			<code>POST /signal - {"type": "CALL_REQUEST", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
+			<code>POST /signal - {"type": "CALL_ACCEPT", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
+			<code>POST /signal - {"type": "CALL_END", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
+			<code>GET /poll/{node_id}</code>
+			<code>GET /ws/{node_id}</code>
+		</div>
+	</div>
+	<script>
+		const myNode = prompt("Enter your node ID:") || "anonymous";
+		let currentCallId = null;
+		let ws = null;
+
+		function connect() {
+			ws = new WebSocket("ws://"+location.host+"/ws/"+myNode);
+			ws.onmessage = e => {
+				const msg = JSON.parse(e.data);
+				if(msg.type === "CALL_REQUEST") {
+					currentCallId = msg.call_id;
+					document.getElementById("fromNode").textContent = msg.from_id;
+					document.getElementById("incoming").style.display = "block";
+					// Incoming sound alert
+					const audio = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU");
+					audio.play().catch(()=>{});
+				}
+			};
+			ws.onclose = () => {
+				setTimeout(connect, 2000);
+			};
+		}
+
+		async function loadNodes() {
+			const res = await fetch("/nodes");
+			const nodes = await res.json();
+			document.getElementById("nodes").innerHTML = nodes.map(n =>
+				`<div class="node ${n.status}">
+					<span class="node-id">${n.id}</span>
+					<span class="node-name">${n.name}</span>
+					<span class="status ${n.status}">${n.status}</span>
+					<button class="call-btn" onclick="call('${n.id}')" ${n.status === 'offline' ? 'disabled' : ''}>Call</button>
+				</div>`
+			).join("");
+		}
+
+		async function call(toId) {
+			const callId = crypto.randomUUID();
+			currentCallId = callId;
+			document.getElementById("activeWith").textContent = toId;
+			document.getElementById("activeCall").style.display = "block";
+
+			await fetch("/signal", {
+				method: "POST",
+				headers: {"Content-Type": "application/json"},
+				body: JSON.stringify({
+					type: "CALL_REQUEST",
+					from_id: myNode,
+					to_id: toId,
+					call_id: callId
+				})
+			});
+		}
+
+		async function answerCall() {
+			if(!currentCallId) return;
+			document.getElementById("incoming").style.display = "none";
+			document.getElementById("activeWith").textContent = document.getElementById("fromNode").textContent;
+			document.getElementById("activeCall").style.display = "block";
+
+			await fetch("/signal", {
+				method: "POST",
+				headers: {"Content-Type": "application/json"},
+				body: JSON.stringify({
+					type: "CALL_ACCEPT",
+					from_id: myNode,
+					to_id: document.getElementById("fromNode").textContent,
+					call_id: currentCallId
+				})
+			});
+		}
+
+		async function rejectCall() {
+			if(!currentCallId) return;
+			document.getElementById("incoming").style.display = "none";
+
+			await fetch("/signal", {
+				method: "POST",
+				headers: {"Content-Type": "application/json"},
+				body: JSON.stringify({
+					type: "CALL_REJECT",
+					from_id: myNode,
+					to_id: document.getElementById("fromNode").textContent,
+					call_id: currentCallId
+				})
+			});
+			currentCallId = null;
+		}
+
+		async function endCall() {
+			if(!currentCallId) return;
+			document.getElementById("activeCall").style.display = "none";
+			currentCallId = null;
+
+			await fetch("/signal", {
+				method: "POST",
+				headers: {"Content-Type": "application/json"},
+				body: JSON.stringify({
+					type: "CALL_END",
+					from_id: myNode,
+					to_id: "",
+					call_id: currentCallId
+				})
+			});
+		}
+
+		setInterval(loadNodes, 5000);
+		loadNodes();
+		setInterval(() => fetch("/heartbeat?node_id="+myNode, {method: "POST"}), 30000);
+
+		connect();
+	</script>
+</body>
+</html>

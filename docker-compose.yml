@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  zerophone:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - zerophone_data:/root
+      - ./data:/data
+    restart: unless-stopped
+    environment:
+      - ZEROPHONE_DB=/root/zerophone.db
+      - ZEROPHONE_ADDR=:8080
+
+volumes:
+  zerophone_data:
