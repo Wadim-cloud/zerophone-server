@@ -22,4 +22,4 @@ COPY --from=builder /app/static ./static
 
 EXPOSE 8080
 
-CMD ["./zerophone", "--db", "/root/zerophone.db"]
+CMD ["./zerophone", "--addr", ":8080", "--db", "/root/zerophone.db"]
