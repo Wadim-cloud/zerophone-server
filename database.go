@@ -31,6 +31,7 @@ func (d *Database) Migrate() error {
 		CREATE TABLE IF NOT EXISTS nodes (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
+			network_id TEXT NOT NULL,
 			last_seen INTEGER NOT NULL,
 			status TEXT NOT NULL,
 			capabilities TEXT NOT NULL,
@@ -73,14 +74,14 @@ func (d *Database) Migrate() error {
 }
 
 // Node operations
-func (d *Database) CreateNode(id, name string, capabilities []string) error {
+func (d *Database) CreateNode(id, name, networkID string, capabilities []string) error {
 	lastSeen := time.Now().Unix()
 	status := "offline"
 	capJSON, _ := json.Marshal(capabilities)
 
 	_, err := d.db.Exec(
-		"INSERT OR REPLACE INTO nodes (id, name, last_seen, status, capabilities, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-		id, name, lastSeen, status, string(capJSON), lastSeen,
+		"INSERT OR REPLACE INTO nodes (id, name, network_id, last_seen, status, capabilities, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		id, name, networkID, lastSeen, status, string(capJSON), lastSeen,
 	)
 	return err
 }
@@ -100,11 +101,11 @@ func (d *Database) UpdateNodeLastSeen(id string) error {
 }
 
 func (d *Database) GetNode(id string) (*Node, error) {
-	row := d.db.QueryRow("SELECT id, name, last_seen, status, capabilities FROM nodes WHERE id = ?", id)
+	row := d.db.QueryRow("SELECT id, name, network_id, last_seen, status, capabilities FROM nodes WHERE id = ?", id)
 
 	var node Node
 	var capsJSON string
-	err := row.Scan(&node.ID, &node.Name, &node.LastSeen, &node.Status, &capsJSON)
+	err := row.Scan(&node.ID, &node.Name, &node.NetworkID, &node.LastSeen, &node.Status, &capsJSON)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +115,7 @@ func (d *Database) GetNode(id string) (*Node, error) {
 }
 
 func (d *Database) GetAllNodes() ([]*Node, error) {
-	rows, err := d.db.Query("SELECT id, name, last_seen, status, capabilities FROM nodes ORDER BY last_seen DESC")
+	rows, err := d.db.Query("SELECT id, name, network_id, last_seen, status, capabilities FROM nodes ORDER BY last_seen DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +125,28 @@ func (d *Database) GetAllNodes() ([]*Node, error) {
 	for rows.Next() {
 		var node Node
 		var capsJSON string
-		err := rows.Scan(&node.ID, &node.Name, &node.LastSeen, &node.Status, &capsJSON)
+		err := rows.Scan(&node.ID, &node.Name, &node.NetworkID, &node.LastSeen, &node.Status, &capsJSON)
+		if err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(capsJSON), &node.Capabilities)
+		nodes = append(nodes, &node)
+	}
+	return nodes, nil
+}
+
+func (d *Database) GetNodesByNetwork(networkID string) ([]*Node, error) {
+	rows, err := d.db.Query("SELECT id, name, network_id, last_seen, status, capabilities FROM nodes WHERE network_id = ? ORDER BY last_seen DESC", networkID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []*Node
+	for rows.Next() {
+		var node Node
+		var capsJSON string
+		err := rows.Scan(&node.ID, &node.Name, &node.NetworkID, &node.LastSeen, &node.Status, &capsJSON)
 		if err != nil {
 			continue
 		}
@@ -183,7 +205,6 @@ func (d *Database) GetAllCalls() ([]*Call, error) {
 	}
 	return calls, nil
 }
-
 
 // GetAllCalls returns all calls
 

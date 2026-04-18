@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	addr = flag.String("addr", ":8080", "http service address")
+	addr   = flag.String("addr", ":3478", "http service address")
 	dbPath = flag.String("db", "zerophone.db", "path to SQLite database file")
 )
 
@@ -84,7 +84,11 @@ func RegisterHandler(store *Store) http.HandlerFunc {
 			http.Error(w, "id required", http.StatusBadRequest)
 			return
 		}
-		node := store.RegisterNode(req.ID, req.Name, req.Capabilities)
+		if req.NetworkID == "" {
+			http.Error(w, "network_id required", http.StatusBadRequest)
+			return
+		}
+		node := store.RegisterNode(req.ID, req.Name, req.NetworkID, req.Capabilities)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(node)
 	}
@@ -108,7 +112,12 @@ func HeartbeatHandler(store *Store) http.HandlerFunc {
 func NodesHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(store.GetNodes())
+		networkID := r.URL.Query().Get("network_id")
+		if networkID != "" {
+			json.NewEncoder(w).Encode(store.GetNodesByNetwork(networkID))
+		} else {
+			json.NewEncoder(w).Encode(store.GetNodes())
+		}
 	}
 }
 
@@ -123,9 +132,10 @@ func SignalHandler(store *Store, hub *WSHub) http.HandlerFunc {
 
 		msg := Message{
 			Type:    req.Type,
-			FromID: req.FromID,
-			ToID:   req.ToID,
-			CallID: req.CallID,
+			FromID:  req.FromID,
+			ToID:    req.ToID,
+			CallID:  req.CallID,
+			SDP:     req.SDP,
 			Payload: req.Payload,
 		}
 
@@ -142,6 +152,8 @@ func SignalHandler(store *Store, hub *WSHub) http.HandlerFunc {
 			if req.CallID != "" {
 				store.UpdateCallState(req.CallID, CallStateEnded)
 			}
+		case MsgSDPOffer, MsgSDPAnswer, MsgICECandidate:
+			// WebRTC signaling - just pass through
 		}
 
 		store.QueueMessage(msg)
@@ -185,4 +197,3 @@ func monitorCallTimeouts(store *Store) {
 		}
 	}
 }
-

@@ -4,9 +4,10 @@ import "time"
 
 type Node struct {
 	ID           string   `json:"id"`
-	Name        string   `json:"name"`
-	LastSeen    int64    `json:"last_seen"`
-	Status     string   `json:"status"`
+	Name         string   `json:"name"`
+	NetworkID    string   `json:"network_id"`
+	LastSeen     int64    `json:"last_seen"`
+	Status       string   `json:"status"`
 	Capabilities []string `json:"capabilities"`
 }
 
@@ -18,20 +19,24 @@ func (n *Node) ComputeStatus() {
 }
 
 type Message struct {
-	Type    string         `json:"type"`
-	FromID string         `json:"from_id"`
-	ToID   string         `json:"to_id"`
-	CallID string         `json:"call_id,omitempty"`
+	Type    string                 `json:"type"`
+	FromID  string                 `json:"from_id"`
+	ToID    string                 `json:"to_id"`
+	CallID  string                 `json:"call_id,omitempty"`
+	SDP     string                 `json:"sdp,omitempty"`
 	Payload map[string]interface{} `json:"payload,omitempty"`
-	Time   int64          `json:"time"`
+	Time    int64                  `json:"time"`
 }
 
 const (
-	MsgCallRequest = "CALL_REQUEST"
-	MsgCallAccept = "CALL_ACCEPT"
-	MsgCallReject = "CALL_REJECT"
-	MsgCallEnd    = "CALL_END"
-	MsgMessage   = "MESSAGE"
+	MsgCallRequest  = "CALL_REQUEST"
+	MsgCallAccept   = "CALL_ACCEPT"
+	MsgCallReject   = "CALL_REJECT"
+	MsgCallEnd      = "CALL_END"
+	MsgSDPOffer     = "SDP_OFFER"
+	MsgSDPAnswer    = "SDP_ANSWER"
+	MsgICECandidate = "ICE_CANDIDATE"
+	MsgMessage      = "MESSAGE"
 )
 
 type Call struct {
@@ -46,19 +51,21 @@ type Call struct {
 const (
 	CallStateRinging = "ringing"
 	CallStateActive  = "active"
-	CallStateEnded  = "ended"
+	CallStateEnded   = "ended"
 )
 
 type RegisterRequest struct {
 	ID           string   `json:"id"`
-	Name        string   `json:"name"`
+	Name         string   `json:"name"`
+	NetworkID    string   `json:"network_id"`
 	Capabilities []string `json:"capabilities"`
 }
 
 type SignalRequest struct {
-	Type    string         `json:"type"`
-	FromID string         `json:"from_id"`
-	ToID   string         `json:"to_id"`
-	CallID string         `json:"call_id,omitempty"`
+	Type    string                 `json:"type"`
+	FromID  string                 `json:"from_id"`
+	ToID    string                 `json:"to_id"`
+	CallID  string                 `json:"call_id,omitempty"`
+	SDP     string                 `json:"sdp,omitempty"`
 	Payload map[string]interface{} `json:"payload,omitempty"`
 }

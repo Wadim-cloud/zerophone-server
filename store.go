@@ -6,8 +6,8 @@ import (
 )
 
 type Store struct {
-	mu       sync.RWMutex
-	db       *Database
+	mu sync.RWMutex
+	db *Database
 }
 
 func NewStore() *Store {
@@ -22,19 +22,20 @@ func (s *Store) SetDB(db *Database) {
 	s.db = db
 }
 
-func (s *Store) RegisterNode(id, name string, caps []string) *Node {
+func (s *Store) RegisterNode(id, name, networkID string, caps []string) *Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	node := &Node{
 		ID:           id,
 		Name:         name,
-		LastSeen:    time.Now().Unix(),
-		Status:     "offline",
+		NetworkID:    networkID,
+		LastSeen:     time.Now().Unix(),
+		Status:       "offline",
 		Capabilities: caps,
 	}
 
-	_ = s.db.CreateNode(id, name, caps)
+	_ = s.db.CreateNode(id, name, networkID, caps)
 	return node
 }
 
@@ -66,7 +67,27 @@ func (s *Store) GetNodes() []*Node {
 		return nil
 	}
 
-	// Compute real-time status
+	now := time.Now().Unix()
+	for _, node := range nodes {
+		if now-node.LastSeen < 60 {
+			node.Status = "online"
+		} else {
+			node.Status = "offline"
+		}
+	}
+
+	return nodes
+}
+
+func (s *Store) GetNodesByNetwork(networkID string) []*Node {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	nodes, err := s.db.GetNodesByNetwork(networkID)
+	if err != nil {
+		return nil
+	}
+
 	now := time.Now().Unix()
 	for _, node := range nodes {
 		if now-node.LastSeen < 60 {

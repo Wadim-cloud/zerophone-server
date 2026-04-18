@@ -3,6 +3,8 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache gcc musl-dev
+
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -18,6 +20,6 @@ WORKDIR /root/
 COPY --from=builder /app/zerophone .
 COPY --from=builder /app/static ./static
 
-EXPOSE 8080
+EXPOSE 3478
 
 CMD ["./zerophone", "--db", "/root/zerophone.db"]

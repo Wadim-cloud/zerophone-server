@@ -1,77 +1,65 @@
 # ZeroPhone
 
-A distributed VoIP signaling server built with Go. Enables real-time call signaling between nodes using WebSockets and HTTP long-polling.
+A distributed VoIP signaling server with WebRTC voice calling. Nodes on the same ZeroTier network can discover each other and make audio calls.
 
 ## Features
 
-- Node registration and heartbeat-based presence detection
-- Real-time call signaling (REQUEST, ACCEPT, REJECT, END)
-- WebSocket push + HTTP polling for real-time messaging
+- ZeroTier network-based node discovery
+- WebRTC voice calling (audio only)
+- Real-time signaling via WebSockets + HTTP polling
 - SQLite persistence for nodes, calls, and message queues
-- Auto-cleanup of old messages and ended calls
 - Call timeout handling (auto-reject after 60 seconds)
-- Web-based UI for testing and monitoring
 - Docker support for easy deployment
 
 ## Quick Start
 
-### Using Docker Compose (Recommended)
+### Using Docker
 
 ```bash
-git clone <your-repo>
-cd zerophone
-docker-compose up
+# Build and run
+docker build -t zerophone .
+docker run -d -p 3478:3478 -v zerophone-data:/root --name zerophone zerophone
 ```
 
-Server runs on `http://localhost:8080`
+The server will be available at `http://localhost:3478`
 
 ### Manual Build
 
 ```bash
-# Install dependencies
-go mod download
-
-# Build
-make build
-
-# Run
-./zerophone --db zerophone.db --addr :8080
+go build -o zerophone .
+./zerophone --db zerophone.db
 ```
 
-### Using Make
+## Usage
 
-```bash
-make run          # Build and run
-make test         # Run tests
-make clean        # Clean build artifacts
-make docker-build # Build Docker image
-```
+1. Open the web UI at `http://your-server:3478`
+2. Enter your ZeroTier Network ID (16-digit hex), your Node ID, and your Name
+3. Click Register
+4. Other nodes on the same ZeroTier network will appear in the list
+5. Click "Call" to initiate a voice call
 
 ## API Reference
 
 ### POST /register
 
-Register a new node.
+Register a new node (requires ZeroTier network ID):
 
 ```json
 {
   "id": "node-1",
   "name": "My Node",
+  "network_id": "a84ac5c123456789",
   "capabilities": ["audio"]
 }
 ```
 
-### POST /heartbeat?node_id=x
+### GET /nodes?network_id=xxx
 
-Send heartbeat to indicate node is alive.
-
-### GET /nodes
-
-List all registered nodes with online status.
+List nodes on a specific ZeroTier network.
 
 ### POST /signal
 
-Send a signaling message.
+Send signaling messages (call, WebRTC SDP, ICE candidates):
 
 ```json
 {
@@ -82,71 +70,44 @@ Send a signaling message.
 }
 ```
 
-Types: `CALL_REQUEST`, `CALL_ACCEPT`, `CALL_REJECT`, `CALL_END`, `MESSAGE`
-
-### GET /poll/{node_id}
-
-Long-poll for pending messages.
+Types: `CALL_REQUEST`, `CALL_ACCEPT`, `CALL_REJECT`, `CALL_END`, `SDP_OFFER`, `SDP_ANSWER`, `ICE_CANDIDATE`
 
 ### GET /ws/{node_id}
 
-WebSocket endpoint for real-time messages.
+WebSocket endpoint for real-time signaling.
 
 ## Configuration
 
-Command-line flags:
-
-- `--addr`: Listen address (default: `:8080`)
+- `--addr`: Listen address (default: `:3478`)
 - `--db`: SQLite database path (default: `zerophone.db`)
 
-## Data Model
+## Docker Deployment
 
-### Node
+```bash
+# Build
+docker build -t zerophone .
 
-- `id`: Unique node identifier
-- `name`: Display name
-- `last_seen`: Unix timestamp of last heartbeat
-- `status`: "online" or "offline"
-- `capabilities`: JSON array of supported features
+# Run
+docker run -d \
+  --name zerophone \
+  -p 3478:3478 \
+  -v zerophone-data:/root \
+  zerophone
+```
 
-### Call
-
-- `call_id`: Unique call identifier
-- `a`, `b`: Participant node IDs
-- `state`: "ringing", "active", or "ended"
-
-### Message
-
-- Queued per recipient
-- Automatically marked delivered when fetched
-- Periodic cleanup of old messages
-
-## Deployment
-
-### Server Setup
-
-1. Clone repository on server
-2. Install Go 1.21+ (or use Docker)
-3. Build: `make build`
-4. Configure: `./zerophone --db /var/lib/zerophone/zerophone.db --addr :8080`
-5. Set up systemd service (see below)
-
-### Systemd Service
+## Systemd Service
 
 Create `/etc/systemd/system/zerophone.service`:
 
 ```ini
 [Unit]
-Description=ZeroPhone VoIP Signaling Server
+Description=ZeroPhone VoIP Server
 After=network.target
 
 [Service]
 Type=simple
-User=zerophone
-WorkingDirectory=/opt/zerophone
-ExecStart=/opt/zerophone/zerophone --db /var/lib/zerophone/zerophone.db --addr :8080
+ExecStart=/opt/zerophone/zerophone --db /var/lib/zerophone/zerophone.db
 Restart=always
-RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
@@ -158,56 +119,21 @@ sudo systemctl enable zerophone
 sudo systemctl start zerophone
 ```
 
-### Docker Deployment
-
-```bash
-# Build image
-docker build -t zerophone:latest .
-
-# Run container
-docker run -d \
-  --name zerophone \
-  -p 8080:8080 \
-  -v zerophone-data:/root \
-  zerophone:latest
-```
-
-### Using with systemd-nspawn or LXC
-
-The Docker image can be used with any container runtime.
-
 ## Architecture
 
 ```
-┌─────────┐     ┌──────────┐     ┌──────────┐
-│ Node A  │────▶│  Store   │────▶│ Node B   │
-│ (WebUI) │     │  (SQLite)│     │ (WebUI)  │
-└─────────┘     └──────────┘     └──────────┘
-                    │  ▲
-                    ▼  │
-              ┌──────────┐
-              │ WS Hub   │ (WebSocket)
-              └──────────┘
+┌─────────┐     ┌──────────┐     ┌─────────┐
+│ Node A  │────▶│  Server  │────▶│ Node B  │
+│ (WebRTC)│◀────│ (Signaling)◀───│ (WebRTC)│
+└─────────┘     └──────────┘     └─────────┘
+                    │
+              ┌─────────┐
+              │ SQLite  │
+              └─────────┘
 ```
-
-## Testing
-
-Open `http://your-server:8080` in two browser windows. Enter different node IDs and test calling between them.
 
 ## Troubleshooting
 
-### Port already in use
-
-Change `--addr` flag to use a different port.
-
-### Database locked
-
-Ensure only one instance runs per database file. Use separate DB files for multiple instances.
-
-### Messages not delivered
-
-Check WebSocket connection status. Messages fall back to HTTP polling.
-
-## License
-
-MIT
+- Ensure all nodes are on the same ZeroTier network
+- Check firewall allows port 3478
+- For WebRTC to work, STUN servers must be accessible

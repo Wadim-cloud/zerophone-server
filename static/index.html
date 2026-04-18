@@ -8,7 +8,12 @@
 		* { box-sizing: border-box; margin: 0; padding: 0; }
 		body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
 		h1 { color: #58a6ff; margin-bottom: 20px; }
+		h2 { color: #8b949e; margin: 20px 0 10px; }
 		.container { max-width: 800px; margin: 0 auto; }
+		.setup { background: #161b22; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
+		.setup input { padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px; margin-right: 8px; }
+		.setup button { padding: 8px 16px; background: #238636; color: white; border: none; border-radius: 4px; cursor: pointer; }
+		.setup button:hover { background: #2ea043; }
 		.node-list { display: flex; flex-direction: column; gap: 8px; }
 		.node { display: flex; align-items: center; padding: 12px 16px; background: #161b22; border-radius: 6px; border: 1px solid #30363d; }
 		.node.online { border-left: 3px solid #3fb950; }
@@ -24,150 +29,352 @@
 		.endpoint { font-family: monospace; background: #161b22; padding: 12px; border-radius: 6px; margin-top: 20px; }
 		.endpoint h3 { color: #58a6ff; margin-bottom: 8px; }
 		.endpoint code { display: block; color: #8b949e; font-size: 13px; }
-		.incoming { color: #f0883e; font-weight: bold; margin-top: 10px; }
-		.active-call { margin-top: 20px; padding: 12px; background: #161b22; border-radius: 6px; border: 1px solid #3fb950; }
+		.incoming { color: #f0883e; font-weight: bold; margin-top: 10px; padding: 16px; background: #161b22; border-radius: 6px; border: 1px solid #f0883e; }
+		.incoming button { margin-left: 8px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; }
+		.incoming .answer { background: #238636; color: white; }
+		.incoming .reject { background: #da3633; color: white; }
+		.active-call { margin-top: 20px; padding: 16px; background: #161b22; border-radius: 6px; border: 1px solid #3fb950; }
+		.active-call audio { width: 100%; margin-top: 10px; }
+		.connection-status { font-size: 12px; color: #8b949e; margin-top: 8px; }
 	</style>
 </head>
 <body>
 	<div class="container">
 		<h1>ZeroPhone</h1>
-		<h2>Nodes</h2>
+		
+		<div class="setup">
+			<h3>Setup</h3>
+			<input type="text" id="networkId" placeholder="ZeroTier Network ID (e.g., a84ac5c123456789)">
+			<input type="text" id="myNodeId" placeholder="Your Node ID">
+			<input type="text" id="myName" placeholder="Your Name">
+			<button onclick="register()">Register</button>
+		</div>
+
+		<h2>Nodes on Your Network</h2>
 		<div class="node-list" id="nodes"></div>
 
 		<div id="activeCall" class="active-call" style="display:none;">
-			<h3>Active Call with <span id="activeWith"></span></h3>
-			<button onclick="endCall()">End Call</button>
+			<h3>Call with <span id="activeWith"></span></h3>
+			<p class="connection-status" id="connectionStatus">Connecting...</p>
+			<audio id="remoteAudio" autoplay></audio>
+			<br>
+			<button onclick="endCall()" style="padding: 8px 16px; background: #da3633; color: white; border: none; border-radius: 4px; cursor: pointer;">End Call</button>
 		</div>
 
 		<div id="incoming" class="incoming" style="display:none;">
 			Incoming call from <span id="fromNode"></span>
-			<button onclick="answerCall()">Answer</button>
-			<button onclick="rejectCall()">Reject</button>
+			<br><br>
+			<button class="answer" onclick="answerCall()">Answer</button>
+			<button class="reject" onclick="rejectCall()">Reject</button>
 		</div>
 
 		<div class="endpoint">
 			<h3>REST API</h3>
-			<code>POST /register - {"id": "x", "name": "x", "capabilities": ["audio"]}</code>
-			<code>POST /heartbeat?node_id=x</code>
-			<code>GET /nodes</code>
-			<code>POST /signal - {"type": "CALL_REQUEST", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
-			<code>POST /signal - {"type": "CALL_ACCEPT", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
-			<code>POST /signal - {"type": "CALL_END", "from_id": "a", "to_id": "b", "call_id": "uuid"}</code>
-			<code>GET /poll/{node_id}</code>
-			<code>GET /ws/{node_id}</code>
+			<code>POST /register - {"id": "x", "name": "x", "network_id": "xxx", "capabilities": ["audio"]}</code>
+			<code>GET /nodes?network_id=xxx</code>
+			<code>POST /signal - WebRTC signaling</code>
 		</div>
 	</div>
 	<script>
-		const myNode = prompt("Enter your node ID:") || "anonymous";
+		const IceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+		
+		let myNode = '';
+		let networkId = '';
 		let currentCallId = null;
+		let remotePeerId = null;
 		let ws = null;
+		let pc = null;
+		let localStream = null;
+
+		function getMyNodeId() { return document.getElementById('myNodeId').value; }
+		function getNetworkId() { return document.getElementById('networkId').value; }
+
+		async function register() {
+			const nodeId = document.getElementById('myNodeId').value;
+			const name = document.getElementById('myName').value;
+			const network = document.getElementById('networkId').value;
+			
+			if (!nodeId || !name || !network) {
+				alert('Please fill in all fields');
+				return;
+			}
+			
+			myNode = nodeId;
+			networkId = network;
+			
+			const res = await fetch('/register', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					id: nodeId,
+					name: name,
+					network_id: network,
+					capabilities: ['audio']
+				})
+			});
+			
+			if (res.ok) {
+				connect();
+				setInterval(() => fetch('/heartbeat?node_id=' + myNode, { method: 'POST' }), 30000);
+				setInterval(loadNodes, 5000);
+				loadNodes();
+			}
+		}
 
 		function connect() {
-			ws = new WebSocket("ws://"+location.host+"/ws/"+myNode);
-			ws.onmessage = e => {
+			ws = new WebSocket('ws://' + location.host + '/ws/' + myNode);
+			ws.onmessage = async e => {
 				const msg = JSON.parse(e.data);
-				if(msg.type === "CALL_REQUEST") {
-					currentCallId = msg.call_id;
-					document.getElementById("fromNode").textContent = msg.from_id;
-					document.getElementById("incoming").style.display = "block";
-					// Incoming sound alert
-					const audio = new Audio("data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU");
-					audio.play().catch(()=>{});
+				
+				switch(msg.type) {
+					case 'CALL_REQUEST':
+						currentCallId = msg.call_id;
+						remotePeerId = msg.from_id;
+						document.getElementById('fromNode').textContent = msg.from_id;
+						document.getElementById('incoming').style.display = 'block';
+						playRingtone();
+						break;
+						
+					case 'CALL_ACCEPT':
+						currentCallId = msg.call_id;
+						await startWebRTC(true);
+						break;
+						
+					case 'SDP_OFFER':
+						if (msg.call_id === currentCallId) {
+							await handleSDPOffer(msg.sdp);
+						}
+						break;
+						
+					case 'SDP_ANSWER':
+						if (msg.call_id === currentCallId && pc) {
+							await pc.setRemoteDescription(JSON.parse(msg.sdp));
+						}
+						break;
+						
+					case 'ICE_CANDIDATE':
+						if (pc && msg.call_id === currentCallId) {
+							await pc.addIceCandidate(JSON.parse(msg.payload.candidate));
+						}
+						break;
+						
+					case 'CALL_END':
+						stopWebRTC();
+						document.getElementById('activeCall').style.display = 'none';
+						currentCallId = null;
+						break;
 				}
 			};
-			ws.onclose = () => {
-				setTimeout(connect, 2000);
-			};
+			ws.onclose = () => setTimeout(connect, 2000);
 		}
 
 		async function loadNodes() {
-			const res = await fetch("/nodes");
+			const network = getNetworkId();
+			if (!network) return;
+			
+			const res = await fetch('/nodes?network_id=' + network);
 			const nodes = await res.json();
-			document.getElementById("nodes").innerHTML = nodes.map(n =>
-				`<div class="node ${n.status}">
+			
+			document.getElementById('nodes').innerHTML = nodes
+				.filter(n => n.id !== myNode)
+				.map(n => `<div class="node ${n.status}">
 					<span class="node-id">${n.id}</span>
 					<span class="node-name">${n.name}</span>
 					<span class="status ${n.status}">${n.status}</span>
 					<button class="call-btn" onclick="call('${n.id}')" ${n.status === 'offline' ? 'disabled' : ''}>Call</button>
 				</div>`
-			).join("");
+			).join('');
 		}
 
 		async function call(toId) {
-			const callId = crypto.randomUUID();
-			currentCallId = callId;
-			document.getElementById("activeWith").textContent = toId;
-			document.getElementById("activeCall").style.display = "block";
-
-			await fetch("/signal", {
-				method: "POST",
-				headers: {"Content-Type": "application/json"},
+			if (!await setupLocalStream()) return;
+			
+			currentCallId = crypto.randomUUID();
+			remotePeerId = toId;
+			
+			pc = new RTCPeerConnection({ iceServers: IceServers });
+			setupPC(pc);
+			
+			const offer = await pc.createOffer();
+			await pc.setLocalDescription(offer);
+			
+			document.getElementById('activeWith').textContent = toId;
+			document.getElementById('activeCall').style.display = 'block';
+			document.getElementById('connectionStatus').textContent = 'Ringing...';
+			
+			await fetch('/signal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					type: "CALL_REQUEST",
+					type: 'CALL_REQUEST',
 					from_id: myNode,
 					to_id: toId,
-					call_id: callId
+					call_id: currentCallId
 				})
 			});
+			
+			setTimeout(() => sendSDP('SDP_OFFER', pc.localDescription), 500);
 		}
 
 		async function answerCall() {
-			if(!currentCallId) return;
-			document.getElementById("incoming").style.display = "none";
-			document.getElementById("activeWith").textContent = document.getElementById("fromNode").textContent;
-			document.getElementById("activeCall").style.display = "block";
-
-			await fetch("/signal", {
-				method: "POST",
-				headers: {"Content-Type": "application/json"},
+			if (!await setupLocalStream()) return;
+			
+			document.getElementById('incoming').style.display = 'none';
+			document.getElementById('activeWith').textContent = remotePeerId;
+			document.getElementById('activeCall').style.display = 'block';
+			
+			pc = new RTCPeerConnection({ iceServers: IceServers });
+			setupPC(pc);
+			
+			const answer = await pc.createAnswer();
+			await pc.setLocalDescription(answer);
+			
+			await fetch('/signal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					type: "CALL_ACCEPT",
+					type: 'CALL_ACCEPT',
 					from_id: myNode,
-					to_id: document.getElementById("fromNode").textContent,
+					to_id: remotePeerId,
 					call_id: currentCallId
 				})
 			});
+			
+			setTimeout(() => sendSDP('SDP_ANSWER', pc.localDescription), 500);
+		}
+
+		async function handleSDPOffer(sdp) {
+			pc = new RTCPeerConnection({ iceServers: IceServers });
+			setupPC(pc);
+			
+			await pc.setRemoteDescription(JSON.parse(sdp));
+			const answer = await pc.createAnswer();
+			await pc.setLocalDescription(answer);
+			
+			document.getElementById('connectionStatus').textContent = 'Connecting...';
+			setTimeout(() => sendSDP('SDP_ANSWER', pc.localDescription), 500);
+		}
+
+		function setupPC(pc) {
+			pc.onicecandidate = e => {
+				if (e.candidate) {
+					fetch('/signal', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'ICE_CANDIDATE',
+							from_id: myNode,
+							to_id: remotePeerId,
+							call_id: currentCallId,
+							payload: { candidate: e.candidate }
+						})
+					});
+				}
+			};
+			
+			pc.ontrack = e => {
+				document.getElementById('remoteAudio').srcObject = e.streams[0];
+				document.getElementById('connectionStatus').textContent = 'Connected';
+			};
+			
+			pc.oniceconnectionstatechange = () => {
+				if (pc.iceConnectionState === 'connected') {
+					document.getElementById('connectionStatus').textContent = 'Connected';
+				} else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+					document.getElementById('connectionStatus').textContent = 'Disconnected';
+				}
+			};
+			
+			localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+		}
+
+		async function sendSDP(type, desc) {
+			await fetch('/signal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					type: type,
+					from_id: myNode,
+					to_id: remotePeerId,
+					call_id: currentCallId,
+					sdp: JSON.stringify(desc)
+				})
+			});
+		}
+
+		async function setupLocalStream() {
+			try {
+				localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+				return true;
+			} catch(e) {
+				alert('Could not access microphone: ' + e.message);
+				return false;
+			}
+		}
+
+		function stopWebRTC() {
+			if (pc) { pc.close(); pc = null; }
+			if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
 		}
 
 		async function rejectCall() {
-			if(!currentCallId) return;
-			document.getElementById("incoming").style.display = "none";
-
-			await fetch("/signal", {
-				method: "POST",
-				headers: {"Content-Type": "application/json"},
+			document.getElementById('incoming').style.display = 'none';
+			await fetch('/signal', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					type: "CALL_REJECT",
+					type: 'CALL_REJECT',
 					from_id: myNode,
-					to_id: document.getElementById("fromNode").textContent,
+					to_id: remotePeerId,
 					call_id: currentCallId
 				})
 			});
 			currentCallId = null;
+			remotePeerId = null;
 		}
 
 		async function endCall() {
-			if(!currentCallId) return;
-			document.getElementById("activeCall").style.display = "none";
+			stopWebRTC();
+			document.getElementById('activeCall').style.display = 'none';
+			
+			if (currentCallId) {
+				await fetch('/signal', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						type: 'CALL_END',
+						from_id: myNode,
+						to_id: remotePeerId || '',
+						call_id: currentCallId
+					})
+				});
+			}
 			currentCallId = null;
-
-			await fetch("/signal", {
-				method: "POST",
-				headers: {"Content-Type": "application/json"},
-				body: JSON.stringify({
-					type: "CALL_END",
-					from_id: myNode,
-					to_id: "",
-					call_id: currentCallId
-				})
-			});
+			remotePeerId = null;
 		}
 
-		setInterval(loadNodes, 5000);
-		loadNodes();
-		setInterval(() => fetch("/heartbeat?node_id="+myNode, {method: "POST"}), 30000);
+		let ringtone = null;
+		function playRingtone() {
+			if (!ringtone) {
+				const ctx = new (window.AudioContext || window.webkitAudioContext)();
+				const osc = ctx.createOscillator();
+				const gain = ctx.createGain();
+				osc.connect(gain);
+				gain.connect(ctx.destination);
+				osc.frequency.value = 440;
+				osc.type = 'sine';
+				gain.gain.value = 0.3;
+				osc.start();
+				ringtone = { ctx, osc, gain };
+			}
+		}
 
-		connect();
+		function stopRingtone() {
+			if (ringtone) {
+				ringtone.osc.stop();
+				ringtone = null;
+			}
+		}
 	</script>
 </body>
 </html>
