@@ -19,7 +19,7 @@ A distributed VoIP signaling server with WebRTC voice calling. Nodes on the same
 docker-compose up -d
 ```
 
-The server will be available at `http://localhost:3478`
+The server will be available at `http://localhost:8080`
 
 ### Using Docker
 
@@ -32,7 +32,7 @@ go build -o zerophone .
 
 ## Usage
 
-1. Open the web UI at `http://your-server:3478`
+1. Open the web UI at `http://your-server:8080`
 2. Enter your ZeroTier Network ID (16-digit hex), your Node ID, and your Name
 3. Click Register
 4. Other nodes on the same ZeroTier network will appear in the list
@@ -42,7 +42,7 @@ go build -o zerophone .
 
 Any new user on the same ZeroTier network can register by:
 1. Opening the web UI
-2. Entering the same Network ID (`e857b884d8460d5d` for this deployment)
+2. Entering the same Network ID
 3. Entering their ZeroTier Node ID and Name
 4. Clicking Register
 
@@ -88,7 +88,7 @@ WebSocket endpoint for real-time signaling.
 
 ## Configuration
 
-- `--addr`: Listen address (default: `:3478`)
+- `--addr`: Listen address (default: `:8080`)
 - `--db`: SQLite database path (default: `zerophone.db`)
 
 ## Docker Deployment
@@ -108,10 +108,10 @@ docker-compose down
 
 ### Using Docker Directly
 
-# Run
+```bash
 docker run -d \
   --name zerophone \
-  -p 3478:3478 \
+  -p 8080:8080 \
   -v zerophone-data:/root \
   zerophone
 ```
@@ -156,5 +156,5 @@ sudo systemctl start zerophone
 ## Troubleshooting
 
 - Ensure all nodes are on the same ZeroTier network
-- Check firewall allows port 3478
+- Check firewall allows port 8080
 - For WebRTC to work, STUN servers must be accessible

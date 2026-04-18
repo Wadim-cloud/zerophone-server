@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	addr   = flag.String("addr", ":3478", "http service address")
+	addr   = flag.String("addr", ":8080", "http service address")
 	dbPath = flag.String("db", "zerophone.db", "path to SQLite database file")
 )
 
@@ -79,7 +79,11 @@ func NewRouter(store *Store, hub *WSHub) *mux.Router {
 func RegisterHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RegisterRequest
-		json.NewDecoder(r.Body).Decode(&req)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Println("Register failed: invalid JSON", err)
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
 		log.Println("Register request:", req.ID, req.Name, req.NetworkID)
 		if req.ID == "" {
 			log.Println("Register failed: id required")

@@ -20,6 +20,6 @@ WORKDIR /root/
 COPY --from=builder /app/zerophone .
 COPY --from=builder /app/static ./static
 
-EXPOSE 3478
+EXPOSE 8080
 
 CMD ["./zerophone", "--db", "/root/zerophone.db"]

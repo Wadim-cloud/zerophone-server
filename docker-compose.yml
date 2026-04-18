@@ -4,14 +4,14 @@ services:
   zerophone:
     build: .
     ports:
-      - "3478:3478"
+      - "8080:8080"
     volumes:
       - zerophone_data:/root
       - ./data:/data
     restart: unless-stopped
     environment:
       - ZEROPHONE_DB=/root/zerophone.db
-      - ZEROPHONE_ADDR=:3478
+      - ZEROPHONE_ADDR=:8080
 
 volumes:
   zerophone_data:
