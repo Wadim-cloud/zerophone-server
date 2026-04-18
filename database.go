@@ -78,11 +78,23 @@ func (d *Database) CreateNode(id, name, networkID string, capabilities []string)
 	lastSeen := time.Now().Unix()
 	status := "offline"
 	capJSON, _ := json.Marshal(capabilities)
+	_, err := d.db.Exec(`
+		INSERT INTO nodes (id, name, network_id, last_seen, status, capabilities, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, name, networkID, lastSeen, status, capJSON, lastSeen)
+	return err
+}
 
-	_, err := d.db.Exec(
-		"INSERT OR REPLACE INTO nodes (id, name, network_id, last_seen, status, capabilities, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		id, name, networkID, lastSeen, status, string(capJSON), lastSeen,
-	)
+func (d *Database) DeleteNode(id string) error {
+	_, err := d.db.Exec(`DELETE FROM nodes WHERE id = ?`, id)
+	if err != nil {
+		// Check if node exists for better error
+		var count int
+		d.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE id = ?`, id).Scan(&count)
+		if count == 0 {
+			return sql.ErrNoRows
+		}
+	}
 	return err
 }
 

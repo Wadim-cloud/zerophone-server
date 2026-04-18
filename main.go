@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"flag"
 	"log"
@@ -69,6 +70,7 @@ func NewRouter(store *Store, hub *WSHub) *mux.Router {
 	r.HandleFunc("/register", RegisterHandler(store)).Methods("POST")
 	r.HandleFunc("/heartbeat", HeartbeatHandler(store)).Methods("POST")
 	r.HandleFunc("/nodes", NodesHandler(store)).Methods("GET")
+	r.HandleFunc("/nodes/{id}", DeleteNodeHandler(store)).Methods("DELETE")
 	r.HandleFunc("/signal", SignalHandler(store, hub)).Methods("POST")
 	r.HandleFunc("/poll/{node_id}", PollHandler(store)).Methods("GET")
 	r.HandleFunc("/ws/{node_id}", WSHandler(hub)).Methods("GET")
@@ -132,6 +134,27 @@ func NodesHandler(store *Store) http.HandlerFunc {
 			log.Printf("Found %d nodes (all networks)\n", len(nodes))
 			json.NewEncoder(w).Encode(nodes)
 		}
+	}
+}
+
+func DeleteNodeHandler(store *Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		nodeID := mux.Vars(r)["id"]
+		log.Println("Delete node request:", nodeID)
+		if nodeID == "" {
+			http.Error(w, "node id required", http.StatusBadRequest)
+			return
+		}
+		if err := store.DeleteNode(nodeID); err != nil {
+			if err == sql.ErrNoRows {
+				http.Error(w, "node not found", http.StatusNotFound)
+			} else {
+				http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+		log.Println("Node deleted:", nodeID)
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

@@ -127,6 +127,12 @@ func (s *Store) QueueMessage(msg Message) {
 	_ = s.db.QueueMessage(msg)
 }
 
+func (s *Store) DeleteNode(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.DeleteNode(id)
+}
+
 func (s *Store) GetMessages(nodeID string) []Message {
 	s.mu.Lock()
 	defer s.mu.Unlock()
