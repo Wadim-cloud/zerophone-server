@@ -10,6 +10,8 @@ A distributed VoIP signaling server with WebRTC voice calling. Nodes on the same
 - SQLite persistence for nodes, calls, and message queues
 - Call timeout handling (auto-reject after 60 seconds)
 - Docker support for easy deployment
+- **Modern dark-themed web UI** with real-time updates
+- **TUI CLI client** for terminal-based node management and calling
 
 ## Quick Start
 
@@ -30,23 +32,58 @@ go build -o zerophone .
 ./zerophone --db zerophone.db
 ```
 
-## Usage
+## Clients
 
-1. Open the web UI at `http://your-server:8080`
-2. Enter your ZeroTier Network ID (16-digit hex), your Node ID, and your Name
-3. Click Register
-4. Other nodes on the same ZeroTier network will appear in the list
-5. Click "Call" to initiate a voice call
+### Web Client
 
-### Adding New Users
+Open `http://your-server:8080` in any modern browser:
 
-Any new user on the same ZeroTier network can register by:
-1. Opening the web UI
-2. Entering the same Network ID
-3. Entering their ZeroTier Node ID and Name
-4. Clicking Register
+1. Enter your ZeroTier Network ID (16-digit hex), your Node ID, and your Name
+2. Click **Register**
+3. Other nodes on the same ZeroTier network will appear in the list
+4. Click **Call** to initiate a voice call
+5. Accept/Reject incoming calls via on-screen prompts
 
-They will automatically see and can call other registered nodes on the network.
+**Features:**
+- Real-time WebSocket connection indicator
+- Auto-refresh node list every 5 seconds
+- Incoming call ringtone and overlay
+- Active call timer and status
+- Toast notifications for events
+
+### CLI Client
+
+A terminal-based client built with Go:
+
+```bash
+# Clone and build
+git clone https://github.com/your-org/zerophone-cli.git
+cd zerophone-cli
+go build -o zerophone-cli .
+
+# Configure (create ~/.zerophone-cli.json)
+cat > ~/.zerophone-cli.json <<EOF
+{
+  "network_id": "a84ac5c123456789",
+  "node_id": "your-zerotier-node-id",
+  "name": "Your Name",
+  "server_addr": "http://localhost:8080"
+}
+EOF
+
+# Run
+./zerophone-cli
+```
+
+**Controls:**
+- `↑/↓` — Select node
+- `Enter` — Call selected node / End active call
+- `a` — Answer incoming call
+- `R` — Reject incoming call
+- `r` — Refresh node list
+- `q` — Quit
+
+The CLI displays online/offline status, auto-refreshes every 5s, and shows call timers.
 
 ## API Reference
 
@@ -81,6 +118,10 @@ Send signaling messages (call, WebRTC SDP, ICE candidates):
 ```
 
 Types: `CALL_REQUEST`, `CALL_ACCEPT`, `CALL_REJECT`, `CALL_END`, `SDP_OFFER`, `SDP_ANSWER`, `ICE_CANDIDATE`
+
+### GET /poll/{node_id}
+
+Long-poll for queued messages (legacy fallback).
 
 ### GET /ws/{node_id}
 
@@ -140,6 +181,15 @@ sudo systemctl enable zerophone
 sudo systemctl start zerophone
 ```
 
+## WebRTC Call Flow
+
+1. Caller sends `CALL_REQUEST` via `/signal` (or WebSocket)
+2. Callee receives `CALL_REQUEST` via WebSocket, UI prompts
+3. If callee answers, `CALL_ACCEPT` is sent
+4. Both peers exchange SDP offers/answers via `/signal`
+5. ICE candidates are exchanged via `/signal`
+6. Once connected, audio streams directly peer-to-peer
+
 ## Architecture
 
 ```
@@ -158,3 +208,26 @@ sudo systemctl start zerophone
 - Ensure all nodes are on the same ZeroTier network
 - Check firewall allows port 8080
 - For WebRTC to work, STUN servers must be accessible
+
+## Development
+
+The project uses Go modules. To add features or fix bugs:
+
+```bash
+git clone https://github.com/your-org/zerophone.git
+cd zerophone
+go mod download
+go build -o zerophone .
+```
+
+Run tests:
+
+```bash
+go test ./...
+```
+
+The server serves static files from `static/` — the primary UI is `static/index.html`.
+
+---
+
+*Built with ❤️ using Go, WebRTC, and ZeroTier.*

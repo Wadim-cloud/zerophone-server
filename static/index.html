@@ -1,82 +1,378 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>ZeroPhone</title>
+	<title>ZeroPhone — Distributed VoIP</title>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<style>
+		:root {
+			--bg: #0d1117;
+			--card: #161b22;
+			--border: #30363d;
+			--text: #c9d1d9;
+			--muted: #8b949e;
+			--accent: #58a6ff;
+			--success: #3fb950;
+			--danger: #f85149;
+			--warning: #f0883e;
+			--input-bg: #0d1117;
+		}
 		* { box-sizing: border-box; margin: 0; padding: 0; }
-		body { font-family: system-ui, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }
-		h1 { color: #58a6ff; margin-bottom: 20px; }
-		h2 { color: #8b949e; margin: 20px 0 10px; }
-		.container { max-width: 800px; margin: 0 auto; }
-		.setup { background: #161b22; padding: 16px; border-radius: 6px; margin-bottom: 20px; }
-		.setup input { padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px; margin-right: 8px; }
-		.setup button { padding: 8px 16px; background: #238636; color: white; border: none; border-radius: 4px; cursor: pointer; }
-		.setup button:hover { background: #2ea043; }
-		.node-list { display: flex; flex-direction: column; gap: 8px; }
-		.node { display: flex; align-items: center; padding: 12px 16px; background: #161b22; border-radius: 6px; border: 1px solid #30363d; }
-		.node.online { border-left: 3px solid #3fb950; }
-		.node.offline { border-left: 3px solid #6e7681; }
-		.node-id { font-family: monospace; font-size: 14px; color: #8b949e; }
-		.node-name { font-size: 16px; font-weight: 500; margin-left: 12px; }
-		.status { margin-left: auto; font-size: 12px; padding: 4px 8px; border-radius: 12px; }
-		.status.online { background: #238636; color: white; }
-		.status.offline { background: #484f58; color: white; }
-		.call-btn { margin-left: 12px; padding: 6px 12px; background: #238636; color: white; border: none; border-radius: 4px; cursor: pointer; }
-		.call-btn:hover { background: #2ea043; }
-		.call-btn:disabled { background: #484f58; cursor: not-allowed; }
-		.endpoint { font-family: monospace; background: #161b22; padding: 12px; border-radius: 6px; margin-top: 20px; }
-		.endpoint h3 { color: #58a6ff; margin-bottom: 8px; }
-		.endpoint code { display: block; color: #8b949e; font-size: 13px; }
-		.incoming { color: #f0883e; font-weight: bold; margin-top: 10px; padding: 16px; background: #161b22; border-radius: 6px; border: 1px solid #f0883e; }
-		.incoming button { margin-left: 8px; padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; }
-		.incoming .answer { background: #238636; color: white; }
-		.incoming .reject { background: #da3633; color: white; }
-		.active-call { margin-top: 20px; padding: 16px; background: #161b22; border-radius: 6px; border: 1px solid #3fb950; }
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			line-height: 1.5;
+			padding: 20px;
+			min-height: 100vh;
+		}
+		.container { max-width: 960px; margin: 0 auto; }
+		
+		/* Header */
+		header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 24px;
+			padding-bottom: 16px;
+			border-bottom: 1px solid var(--border);
+		}
+		h1 { color: var(--accent); font-size: 1.5rem; font-weight: 600; }
+		.subtitle { color: var(--muted); font-size: 0.875rem; }
+		
+		/* Cards */
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			padding: 20px;
+			margin-bottom: 16px;
+		}
+		.card h3 {
+			color: var(--text);
+			font-size: 0.875rem;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			margin-bottom: 12px;
+			opacity: 0.8;
+		}
+		
+		/* Setup form */
+		.setup-grid {
+			display: grid;
+			grid-template-columns: 1fr 1fr 1fr auto;
+			gap: 12px;
+			align-items: end;
+		}
+		.input-group {
+			display: flex;
+			flex-direction: column;
+			gap: 4px;
+		}
+		.input-group label {
+			font-size: 0.75rem;
+			color: var(--muted);
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+		}
+		input[type="text"] {
+			flex: 1;
+			padding: 8px 12px;
+			background: var(--input-bg);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			color: var(--text);
+			font-size: 0.875rem;
+			outline: none;
+			transition: border-color 0.2s, box-shadow 0.2s;
+		}
+		input[type="text"]:focus {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+		}
+		input::placeholder { color: #484f58; }
+		.btn {
+			padding: 9px 16px;
+			background: var(--success);
+			color: white;
+			border: none;
+			border-radius: 6px;
+			font-size: 0.875rem;
+			font-weight: 500;
+			cursor: pointer;
+			transition: background-color 0.2s;
+		}
+		.btn:hover { background: #2ea043; }
+		.btn:disabled {
+			background: var(--border);
+			cursor: not-allowed;
+			opacity: 0.6;
+		}
+		.btn-secondary {
+			background: var(--card);
+			border: 1px solid var(--border);
+			color: var(--text);
+		}
+		.btn-secondary:hover { background: var(--border); }
+		.btn-danger { background: var(--danger); }
+		.btn-danger:hover { background: #da3633; }
+		.btn-small {
+			padding: 6px 12px;
+			font-size: 0.75rem;
+		}
+		
+		/* Status indicators */
+		.status-bar {
+			display: flex;
+			align-items: center;
+			gap: 16px;
+			margin-bottom: 16px;
+			font-size: 0.875rem;
+		}
+		.status-indicator {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+		}
+		.status-dot {
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			background: var(--muted);
+		}
+		.status-dot.online { background: var(--success); box-shadow: 0 0 8px rgba(63, 185, 80, 0.5); }
+		.status-dot.offline { background: var(--muted); }
+		.status-dot.connecting { background: var(--warning); animation: pulse 1s infinite; }
+		@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+		
+		/* Node list */
+		.node-list {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.node {
+			display: flex;
+			align-items: center;
+			padding: 12px 16px;
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 8px;
+			border-left: 3px solid var(--muted);
+			transition: transform 0.15s, border-color 0.2s;
+		}
+		.node:hover {
+			transform: translateX(2px);
+			border-color: var(--accent);
+		}
+		.node.online { border-left-color: var(--success); }
+		.node.offline { border-left-color: var(--muted); opacity: 0.7; }
+		.node-id {
+			font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+			font-size: 0.75rem;
+			color: var(--muted);
+			background: rgba(0,0,0,0.3);
+			padding: 2px 6px;
+			border-radius: 4px;
+			max-width: 120px;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+		.node-name {
+			flex: 1;
+			margin-left: 12px;
+			font-weight: 500;
+			font-size: 0.9375rem;
+		}
+		.node-meta {
+			font-size: 0.75rem;
+			color: var(--muted);
+			margin-right: 12px;
+		}
+		.node-status {
+			font-size: 0.6875rem;
+			padding: 3px 8px;
+			border-radius: 999px;
+			text-transform: uppercase;
+			letter-spacing: 0.05em;
+			font-weight: 600;
+		}
+		.node-status.online {
+			background: rgba(63, 185, 80, 0.15);
+			color: var(--success);
+		}
+		.node-status.offline {
+			background: rgba(110, 118, 129, 0.15);
+			color: var(--muted);
+		}
+		.node-actions { display: flex; gap: 8px; }
+		
+		/* Active call */
+		.active-call {
+			border: 1px solid var(--success);
+			background: linear-gradient(135deg, rgba(63, 185, 80, 0.1), rgba(63, 185, 80, 0.05));
+		}
+		.active-call h3 { color: var(--success); }
 		.active-call audio { width: 100%; margin-top: 10px; }
-		.connection-status { font-size: 12px; color: #8b949e; margin-top: 8px; }
+		.call-info { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+		.call-timer {
+			font-family: monospace;
+			color: var(--accent);
+			font-size: 1.125rem;
+		}
+		
+		/* Incoming call */
+		.incoming-call {
+			border: 1px solid var(--warning);
+			background: linear-gradient(135deg, rgba(240, 136, 62, 0.1), rgba(240, 136, 62, 0.05));
+			animation: slideIn 0.3s ease-out;
+		}
+		@keyframes slideIn {
+			from { transform: translateY(-10px); opacity: 0; }
+			to { transform: translateY(0); opacity: 1; }
+		}
+		.incoming-call h3 { color: var(--warning); }
+		.incoming-actions { display: flex; gap: 8px; margin-top: 12px; }
+		
+		/* API info collapsible */
+		details { margin-top: 24px; }
+		summary {
+			cursor: pointer;
+			color: var(--muted);
+			font-size: 0.875rem;
+			padding: 8px 0;
+		}
+		summary:hover { color: var(--text); }
+		.code-block {
+			background: var(--input-bg);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			padding: 12px;
+			margin-top: 8px;
+			font-family: 'SF Mono', monospace;
+			font-size: 0.75rem;
+			color: var(--muted);
+			overflow-x: auto;
+		}
+		.code-block code { display: block; line-height: 1.6; }
+		
+		/* Toast notifications */
+		.toast-container {
+			position: fixed;
+			top: 20px;
+			right: 20px;
+			z-index: 1000;
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+		.toast {
+			padding: 12px 16px;
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 6px;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+			animation: toastIn 0.2s ease-out;
+			max-width: 300px;
+			font-size: 0.875rem;
+		}
+		.toast.error { border-left: 3px solid var(--danger); }
+		.toast.success { border-left: 3px solid var(--success); }
+		.toast.info { border-left: 3px solid var(--accent); }
+		@keyframes toastIn {
+			from { transform: translateX(100%); opacity: 0; }
+			to { transform: translateX(0); opacity: 1; }
+		}
+		
+		/* Responsive */
+		@media (max-width: 640px) {
+			.setup-grid { grid-template-columns: 1fr; }
+			.node { flex-wrap: wrap; gap: 8px; }
+			.node-name { flex: 1 0 100%; margin-left: 0; order: -1; }
+			.node-id { max-width: none; }
+			.header { flex-direction: column; align-items: flex-start; gap: 8px; }
+		}
 	</style>
 </head>
 <body>
 	<div class="container">
-		<h1>ZeroPhone</h1>
-		
-		<div class="setup">
-			<h3>Setup</h3>
-			<input type="text" id="networkId" placeholder="ZeroTier Network ID (e.g., a84ac5c123456789)">
-			<input type="text" id="myNodeId" placeholder="Your Node ID">
-			<input type="text" id="myName" placeholder="Your Name">
-			<button onclick="register()">Register</button>
+		<header>
+			<div>
+				<h1>ZeroPhone</h1>
+				<p class="subtitle">Distributed VoIP over ZeroTier</p>
+			</div>
+			<div class="status-bar">
+				<div class="status-indicator">
+					<div id="wsDot" class="status-dot"></div>
+					<span id="wsStatus">Disconnected</span>
+				</div>
+				<div id="nodeCount" class="status-indicator"></div>
+			</div>
+		</header>
+
+		<div class="card">
+			<h3>Registration</h3>
+			<div class="setup-grid">
+				<div class="input-group">
+					<label for="networkId">ZeroTier Network ID</label>
+					<input type="text" id="networkId" placeholder="e.g., a84ac5c123456789" maxlength="16">
+				</div>
+				<div class="input-group">
+					<label for="myNodeId">Your Node ID</label>
+					<input type="text" id="myNodeId" placeholder="ZeroTier Node ID" maxlength="64">
+				</div>
+				<div class="input-group">
+					<label for="myName">Your Name</label>
+					<input type="text" id="myName" placeholder="Display name" maxlength="128">
+				</div>
+				<button id="registerBtn" class="btn" onclick="register()">Register</button>
+			</div>
 		</div>
 
-		<h2>Nodes on Your Network</h2>
-		<div class="node-list" id="nodes"></div>
+		<div class="card">
+			<h3>Network Nodes</h3>
+			<div id="nodes" class="node-list"></div>
+		</div>
 
-		<div id="activeCall" class="active-call" style="display:none;">
-			<h3>Call with <span id="activeWith"></span></h3>
-			<p class="connection-status" id="connectionStatus">Connecting...</p>
+		<div id="activeCall" class="card active-call" style="display:none;">
+			<h3>Active Call</h3>
+			<p>Call with <strong id="activeWith"></strong></p>
+			<div class="call-info">
+				<span class="call-timer" id="callTimer">00:00</span>
+				<span id="connectionStatus">Connecting...</span>
+			</div>
 			<audio id="remoteAudio" autoplay></audio>
 			<br>
-			<button onclick="endCall()" style="padding: 8px 16px; background: #da3633; color: white; border: none; border-radius: 4px; cursor: pointer;">End Call</button>
+			<button onclick="endCall()" class="btn btn-danger btn-small" style="margin-top:8px;">End Call</button>
 		</div>
 
-		<div id="incoming" class="incoming" style="display:none;">
-			Incoming call from <span id="fromNode"></span>
-			<br><br>
-			<button class="answer" onclick="answerCall()">Answer</button>
-			<button class="reject" onclick="rejectCall()">Reject</button>
+		<div id="incoming" class="card incoming-call" style="display:none;">
+			<h3>Incoming Call</h3>
+			<p>Call from <strong id="fromNode"></strong></p>
+			<div class="incoming-actions">
+				<button class="btn" onclick="answerCall()">Answer</button>
+				<button class="btn btn-danger" onclick="rejectCall()">Reject</button>
+			</div>
 		</div>
 
-		<div class="endpoint">
-			<h3>REST API</h3>
-			<code>POST /register - {"id": "x", "name": "x", "network_id": "xxx", "capabilities": ["audio"]}</code>
-			<code>GET /nodes?network_id=xxx</code>
-			<code>POST /signal - WebRTC signaling</code>
-		</div>
+		<details>
+			<summary>REST API &amp; WebSocket endpoints</summary>
+			<div class="code-block">
+				<code>POST /register {id, name, network_id, capabilities}
+POST /heartbeat?node_id=xxx
+GET  /nodes?network_id=xxx
+POST /signal {type, from_id, to_id, call_id, sdp, payload}
+GET  /poll/{node_id}
+WS   /ws/{node_id}</code>
+			</div>
+		</details>
 	</div>
+
+	<div id="toastContainer" class="toast-container"></div>
+
 	<script>
-		const IceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+		const ICE_SERVERS = [{ urls: 'stun:stun.l.google.com:19302' }];
 		
 		let myNode = '';
 		let networkId = '';
@@ -85,47 +381,97 @@
 		let ws = null;
 		let pc = null;
 		let localStream = null;
-
-		function getMyNodeId() { return document.getElementById('myNodeId').value; }
-		function getNetworkId() { return document.getElementById('networkId').value; }
-
+		let pollInterval = null;
+		let wsReconnectTimer = null;
+		let callStartTime = null;
+		let callTimerInterval = null;
+		
+		// --- UI Helpers ---
+		function showToast(message, type = 'info') {
+			const container = document.getElementById('toastContainer');
+			const toast = document.createElement('div');
+			toast.className = `toast ${type}`;
+			toast.textContent = message;
+			container.appendChild(toast);
+			setTimeout(() => {
+				toast.style.opacity = '0';
+				setTimeout(() => toast.remove(), 200);
+			}, 3000);
+		}
+		
+		function setWSStatus(status) {
+			const dot = document.getElementById('wsDot');
+			const label = document.getElementById('wsStatus');
+			dot.className = 'status-dot ' + status;
+			label.textContent = status === 'online' ? 'Connected' : 
+			                  status === 'offline' ? 'Disconnected' : 'Connecting...';
+		}
+		
+		function updateNodeCount(count) {
+			const el = document.getElementById('nodeCount');
+			el.innerHTML = `<span class="status-indicator"><div class="status-dot online"></div>${count} node${count !== 1 ? 's' : ''}</span>`;
+		}
+		
+		// --- Registration ---
 		async function register() {
-			const nodeId = document.getElementById('myNodeId').value;
-			const name = document.getElementById('myName').value;
-			const network = document.getElementById('networkId').value;
+			const nodeId = document.getElementById('myNodeId').value.trim();
+			const name = document.getElementById('myName').value.trim();
+			const network = document.getElementById('networkId').value.trim();
 			
 			if (!nodeId || !name || !network) {
-				alert('Please fill in all fields');
+				showToast('Fill in all fields', 'error');
 				return;
 			}
 			
-			myNode = nodeId;
-			networkId = network;
-			
-			const res = await fetch('/register', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					id: nodeId,
-					name: name,
-					network_id: network,
-					capabilities: ['audio']
-				})
-			});
-			
-			if (res.ok) {
-				connect();
-				setInterval(() => fetch('/heartbeat?node_id=' + myNode, { method: 'POST' }), 30000);
-				setInterval(loadNodes, 5000);
+			try {
+				const res = await fetch('/register', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ id: nodeId, name, network_id: network, capabilities: ['audio'] })
+				});
+				
+				if (!res.ok) throw new Error('Registration failed');
+				
+				myNode = nodeId;
+				networkId = network;
+				showToast(`Registered as ${name}`, 'success');
+				
+				connectWebSocket();
+				startHeartbeat();
 				loadNodes();
+				pollInterval = setInterval(loadNodes, 5000);
+				
+				// Disable inputs
+				document.getElementById('networkId').disabled = true;
+				document.getElementById('myNodeId').disabled = true;
+				document.getElementById('myName').disabled = true;
+				document.getElementById('registerBtn').disabled = true;
+			} catch (e) {
+				showToast('Registration error: ' + e.message, 'error');
 			}
 		}
-
-		function connect() {
-			ws = new WebSocket('ws://' + location.host + '/ws/' + myNode);
+		
+		async function startHeartbeat() {
+			await fetch('/heartbeat?node_id=' + myNode, { method: 'POST' });
+			setInterval(() => {
+				fetch('/heartbeat?node_id=' + myNode, { method: 'POST' }).catch(() => {});
+			}, 30000);
+		}
+		
+		// --- WebSocket ---
+		function connectWebSocket() {
+			setWSStatus('connecting');
+			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+			ws = new WebSocket(protocol + '//' + location.host + '/ws/' + myNode);
+			
+			ws.onopen = () => {
+				setWSStatus('online');
+				showToast('Connected to signaling server', 'success');
+			};
+			
 			ws.onmessage = async e => {
 				const msg = JSON.parse(e.data);
-				
+				console.log('WS msg:', msg);
 				switch(msg.type) {
 					case 'CALL_REQUEST':
 						currentCallId = msg.call_id;
@@ -134,65 +480,150 @@
 						document.getElementById('incoming').style.display = 'block';
 						playRingtone();
 						break;
-						
 					case 'CALL_ACCEPT':
 						currentCallId = msg.call_id;
 						await startWebRTC(true);
 						break;
-						
+					case 'CALL_REJECT':
+						stopRingtone();
+						showToast('Call rejected', 'info');
+						resetCallState();
+						break;
 					case 'SDP_OFFER':
 						if (msg.call_id === currentCallId) {
 							await handleSDPOffer(msg.sdp);
 						}
 						break;
-						
 					case 'SDP_ANSWER':
 						if (msg.call_id === currentCallId && pc) {
 							await pc.setRemoteDescription(JSON.parse(msg.sdp));
 						}
 						break;
-						
 					case 'ICE_CANDIDATE':
-						if (pc && msg.call_id === currentCallId) {
+						if (pc && msg.call_id === currentCallId && msg.payload?.candidate) {
 							await pc.addIceCandidate(JSON.parse(msg.payload.candidate));
 						}
 						break;
-						
 					case 'CALL_END':
+						stopRingtone();
 						stopWebRTC();
 						document.getElementById('activeCall').style.display = 'none';
-						currentCallId = null;
+						resetCallState();
+						showToast('Call ended', 'info');
 						break;
 				}
 			};
-			ws.onclose = () => setTimeout(connect, 2000);
+			
+			ws.onclose = () => {
+				setWSStatus('offline');
+				if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
+				wsReconnectTimer = setTimeout(connectWebSocket, 2000);
+			};
+			ws.onerror = () => setWSStatus('offline');
 		}
-
+		
+		// --- Node fetching ---
 		async function loadNodes() {
-			const network = getNetworkId();
+			const network = document.getElementById('networkId').value.trim();
 			if (!network) return;
 			
-			const res = await fetch('/nodes?network_id=' + network);
-			const nodes = await res.json();
-			
-			document.getElementById('nodes').innerHTML = nodes
-				.filter(n => n.id !== myNode)
-				.map(n => `<div class="node ${n.status}">
-					<span class="node-id">${n.id}</span>
-					<span class="node-name">${n.name}</span>
-					<span class="status ${n.status}">${n.status}</span>
-					<button class="call-btn" onclick="call('${n.id}')" ${n.status === 'offline' ? 'disabled' : ''}>Call</button>
-				</div>`
-			).join('');
+			try {
+				const res = await fetch('/nodes?network_id=' + encodeURIComponent(network));
+				const nodes = await res.json();
+				updateNodeCount(nodes.length);
+				
+				const container = document.getElementById('nodes');
+				container.innerHTML = nodes
+					.filter(n => n.id !== myNode)
+					.map(n => `
+						<div class="node ${n.status}">
+							<span class="node-id" title="${n.id}">${n.id}</span>
+							<span class="node-name">${escapeHtml(n.name)}</span>
+							<span class="node-meta">${n.capabilities?.join(', ') || ''}</span>
+							<span class="node-status ${n.status}">${n.status}</span>
+							<div class="node-actions">
+								<button class="btn btn-small" onclick="call('${n.id}')" ${n.status === 'offline' ? 'disabled' : ''}>
+									Call
+								</button>
+							</div>
+						</div>
+					`).join('');
+			} catch (e) {
+				console.error('Failed to load nodes:', e);
+			}
 		}
-
+		
+		function escapeHtml(str) {
+			const div = document.createElement('div');
+			div.textContent = str;
+			return div.innerHTML;
+		}
+		
+		// --- WebRTC & Calling ---
+		async function setupLocalStream() {
+			try {
+				localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+				return true;
+			} catch (e) {
+				showToast('Mic access denied: ' + e.message, 'error');
+				return false;
+			}
+		}
+		
+		async function startWebRTC(isIncoming) {
+			stopRingtone();
+			pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+			
+			pc.onicecandidate = e => {
+				if (e.candidate) {
+					fetch('/signal', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'ICE_CANDIDATE',
+							from_id: myNode,
+							to_id: remotePeerId,
+							call_id: currentCallId,
+							payload: { candidate: e.candidate }
+						})
+					});
+				}
+			};
+			
+			pc.ontrack = e => {
+				document.getElementById('remoteAudio').srcObject = e.streams[0];
+				document.getElementById('connectionStatus').textContent = 'Connected';
+				startCallTimer();
+			};
+			
+			pc.oniceconnectionstatechange = () => {
+				const state = pc.iceConnectionState;
+				if (state === 'connected' || state === 'completed') {
+					document.getElementById('connectionStatus').textContent = 'Connected';
+				} else if (state === 'disconnected' || state === 'failed') {
+					document.getElementById('connectionStatus').textContent = 'Disconnected';
+					showToast('Connection lost', 'error');
+					endCall();
+				}
+			};
+			
+			localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+			
+			if (!isIncoming) {
+				document.getElementById('activeWith').textContent = remotePeerId;
+				document.getElementById('activeCall').style.display = 'block';
+				document.getElementById('connectionStatus').textContent = 'Ringing...';
+			}
+		}
+		
 		async function call(toId) {
 			if (!await setupLocalStream()) return;
 			
 			currentCallId = crypto.randomUUID();
 			remotePeerId = toId;
+			currentCallId = crypto.randomUUID();
 			
-			pc = new RTCPeerConnection({ iceServers: IceServers });
+			pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 			setupPC(pc);
 			
 			const offer = await pc.createOffer();
@@ -215,15 +646,48 @@
 			
 			setTimeout(() => sendSDP('SDP_OFFER', pc.localDescription), 500);
 		}
-
+		
+		function setupPC(pc) {
+			pc.onicecandidate = e => {
+				if (e.candidate) {
+					fetch('/signal', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							type: 'ICE_CANDIDATE',
+							from_id: myNode,
+							to_id: remotePeerId,
+							call_id: currentCallId,
+							payload: { candidate: e.candidate }
+						})
+					});
+				}
+			};
+			pc.ontrack = e => {
+				document.getElementById('remoteAudio').srcObject = e.streams[0];
+				document.getElementById('connectionStatus').textContent = 'Connected';
+			};
+			pc.oniceconnectionstatechange = () => {
+				if (pc.iceConnectionState === 'connected') {
+					document.getElementById('connectionStatus').textContent = 'Connected';
+				} else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+					document.getElementById('connectionStatus').textContent = 'Disconnected';
+					showToast('Call disconnected', 'error');
+					endCall();
+				}
+			};
+			localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+		}
+		
 		async function answerCall() {
 			if (!await setupLocalStream()) return;
 			
 			document.getElementById('incoming').style.display = 'none';
 			document.getElementById('activeWith').textContent = remotePeerId;
 			document.getElementById('activeCall').style.display = 'block';
+			document.getElementById('connectionStatus').textContent = 'Connecting...';
 			
-			pc = new RTCPeerConnection({ iceServers: IceServers });
+			pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 			setupPC(pc);
 			
 			const answer = await pc.createAnswer();
@@ -242,58 +706,24 @@
 			
 			setTimeout(() => sendSDP('SDP_ANSWER', pc.localDescription), 500);
 		}
-
+		
 		async function handleSDPOffer(sdp) {
-			pc = new RTCPeerConnection({ iceServers: IceServers });
+			pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 			setupPC(pc);
 			
 			await pc.setRemoteDescription(JSON.parse(sdp));
 			const answer = await pc.createAnswer();
 			await pc.setLocalDescription(answer);
 			
-			document.getElementById('connectionStatus').textContent = 'Connecting...';
 			setTimeout(() => sendSDP('SDP_ANSWER', pc.localDescription), 500);
 		}
-
-		function setupPC(pc) {
-			pc.onicecandidate = e => {
-				if (e.candidate) {
-					fetch('/signal', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify({
-							type: 'ICE_CANDIDATE',
-							from_id: myNode,
-							to_id: remotePeerId,
-							call_id: currentCallId,
-							payload: { candidate: e.candidate }
-						})
-					});
-				}
-			};
-			
-			pc.ontrack = e => {
-				document.getElementById('remoteAudio').srcObject = e.streams[0];
-				document.getElementById('connectionStatus').textContent = 'Connected';
-			};
-			
-			pc.oniceconnectionstatechange = () => {
-				if (pc.iceConnectionState === 'connected') {
-					document.getElementById('connectionStatus').textContent = 'Connected';
-				} else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-					document.getElementById('connectionStatus').textContent = 'Disconnected';
-				}
-			};
-			
-			localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
-		}
-
+		
 		async function sendSDP(type, desc) {
 			await fetch('/signal', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
-					type: type,
+					type,
 					from_id: myNode,
 					to_id: remotePeerId,
 					call_id: currentCallId,
@@ -301,23 +731,24 @@
 				})
 			});
 		}
-
-		async function setupLocalStream() {
-			try {
-				localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-				return true;
-			} catch(e) {
-				alert('Could not access microphone: ' + e.message);
-				return false;
-			}
-		}
-
+		
 		function stopWebRTC() {
 			if (pc) { pc.close(); pc = null; }
-			if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+			if (localStream) {
+				localStream.getTracks().forEach(t => t.stop());
+				localStream = null;
+			}
+			stopCallTimer();
 		}
-
+		
+		function resetCallState() {
+			currentCallId = null;
+			remotePeerId = null;
+			stopCallTimer();
+		}
+		
 		async function rejectCall() {
+			stopRingtone();
 			document.getElementById('incoming').style.display = 'none';
 			await fetch('/signal', {
 				method: 'POST',
@@ -329,10 +760,9 @@
 					call_id: currentCallId
 				})
 			});
-			currentCallId = null;
-			remotePeerId = null;
+			resetCallState();
 		}
-
+		
 		async function endCall() {
 			stopWebRTC();
 			document.getElementById('activeCall').style.display = 'none';
@@ -349,32 +779,53 @@
 					})
 				});
 			}
-			currentCallId = null;
-			remotePeerId = null;
+			resetCallState();
 		}
-
-		let ringtone = null;
+		
+		// --- Call timer ---
+		function startCallTimer() {
+			callStartTime = Date.now();
+			callTimerInterval = setInterval(() => {
+				const seconds = Math.floor((Date.now() - callStartTime) / 1000);
+				const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
+			 const secs = String(seconds % 60).padStart(2, '0');
+				document.getElementById('callTimer').textContent = `${mins}:${secs}`;
+			}, 1000);
+		}
+		
+		function stopCallTimer() {
+			if (callTimerInterval) clearInterval(callTimerInterval);
+			callTimerInterval = null;
+		}
+		
+		// --- Audio (ringtone) ---
+		let ringtoneCtx = null;
+		
 		function playRingtone() {
-			if (!ringtone) {
-				const ctx = new (window.AudioContext || window.webkitAudioContext)();
-				const osc = ctx.createOscillator();
-				const gain = ctx.createGain();
-				osc.connect(gain);
-				gain.connect(ctx.destination);
-				osc.frequency.value = 440;
-				osc.type = 'sine';
-				gain.gain.value = 0.3;
-				osc.start();
-				ringtone = { ctx, osc, gain };
-			}
+			stopRingtone();
+			ringtoneCtx = new (window.AudioContext || window.webkitAudioContext)();
+			const osc = ringtoneCtx.createOscillator();
+			const gain = ringtoneCtx.createGain();
+			osc.connect(gain);
+			gain.connect(ringtoneCtx.destination);
+			osc.frequency.value = 440;
+			osc.type = 'sine';
+			gain.gain.value = 0.3;
+			osc.start();
+			ringtoneCtx.osc = osc;
+			ringtoneCtx.gain = gain;
 		}
-
+		
 		function stopRingtone() {
-			if (ringtone) {
-				ringtone.osc.stop();
-				ringtone = null;
+			if (ringtoneCtx) {
+				ringtoneCtx.osc?.stop();
+				ringtoneCtx.close();
+				ringtoneCtx = null;
 			}
 		}
+		
+		// Init
+		setWSStatus('offline');
 	</script>
 </body>
 </html>
