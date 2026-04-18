@@ -13,15 +13,15 @@ A distributed VoIP signaling server with WebRTC voice calling. Nodes on the same
 
 ## Quick Start
 
-### Using Docker
+### Using Docker Compose (Recommended)
 
 ```bash
-# Build and run
-docker build -t zerophone .
-docker run -d -p 3478:3478 -v zerophone-data:/root --name zerophone zerophone
+docker-compose up -d
 ```
 
 The server will be available at `http://localhost:3478`
+
+### Using Docker
 
 ### Manual Build
 
@@ -37,6 +37,16 @@ go build -o zerophone .
 3. Click Register
 4. Other nodes on the same ZeroTier network will appear in the list
 5. Click "Call" to initiate a voice call
+
+### Adding New Users
+
+Any new user on the same ZeroTier network can register by:
+1. Opening the web UI
+2. Entering the same Network ID (`e857b884d8460d5d` for this deployment)
+3. Entering their ZeroTier Node ID and Name
+4. Clicking Register
+
+They will automatically see and can call other registered nodes on the network.
 
 ## API Reference
 
@@ -83,9 +93,20 @@ WebSocket endpoint for real-time signaling.
 
 ## Docker Deployment
 
+### Using Docker Compose (Recommended)
+
 ```bash
-# Build
-docker build -t zerophone .
+# Start the server
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the server
+docker-compose down
+```
+
+### Using Docker Directly
 
 # Run
 docker run -d \
