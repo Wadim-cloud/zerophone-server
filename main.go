@@ -80,15 +80,19 @@ func RegisterHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req RegisterRequest
 		json.NewDecoder(r.Body).Decode(&req)
+		log.Println("Register request:", req.ID, req.Name, req.NetworkID)
 		if req.ID == "" {
+			log.Println("Register failed: id required")
 			http.Error(w, "id required", http.StatusBadRequest)
 			return
 		}
 		if req.NetworkID == "" {
+			log.Println("Register failed: network_id required for", req.ID)
 			http.Error(w, "network_id required", http.StatusBadRequest)
 			return
 		}
 		node := store.RegisterNode(req.ID, req.Name, req.NetworkID, req.Capabilities)
+		log.Println("Node registered:", req.ID, "on network", req.NetworkID)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(node)
 	}
@@ -97,6 +101,7 @@ func RegisterHandler(store *Store) http.HandlerFunc {
 func HeartbeatHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		nodeID := r.URL.Query().Get("node_id")
+		log.Println("Heartbeat from:", nodeID)
 		if nodeID == "" {
 			http.Error(w, "node_id required", http.StatusBadRequest)
 			return
@@ -113,10 +118,15 @@ func NodesHandler(store *Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		networkID := r.URL.Query().Get("network_id")
+		log.Println("Nodes request for network:", networkID)
 		if networkID != "" {
-			json.NewEncoder(w).Encode(store.GetNodesByNetwork(networkID))
+			nodes := store.GetNodesByNetwork(networkID)
+			log.Printf("Found %d nodes on network %s\n", len(nodes), networkID)
+			json.NewEncoder(w).Encode(nodes)
 		} else {
-			json.NewEncoder(w).Encode(store.GetNodes())
+			nodes := store.GetNodes()
+			log.Printf("Found %d nodes (all networks)\n", len(nodes))
+			json.NewEncoder(w).Encode(nodes)
 		}
 	}
 }
@@ -125,6 +135,7 @@ func SignalHandler(store *Store, hub *WSHub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req SignalRequest
 		json.NewDecoder(r.Body).Decode(&req)
+		log.Printf("Signal: type=%s from=%s to=%s call_id=%s\n", req.Type, req.FromID, req.ToID, req.CallID)
 		if req.FromID == "" || req.ToID == "" {
 			http.Error(w, "from_id and to_id required", http.StatusBadRequest)
 			return
