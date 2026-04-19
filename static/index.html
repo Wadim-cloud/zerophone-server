@@ -121,7 +121,7 @@
 			font-size: 0.75rem;
 		}
 		
-		/* Status indicators */
+		/* Status bar */
 		.status-bar {
 			display: flex;
 			align-items: center;
@@ -157,7 +157,6 @@
 			padding: 12px 16px;
 			background: var(--card);
 			border: 1px solid var(--border);
-			border-radius: 8px;
 			border-left: 3px solid var(--muted);
 			transition: transform 0.15s, border-color 0.2s;
 		}
@@ -208,6 +207,18 @@
 		}
 		.node-actions { display: flex; gap: 8px; }
 		
+		/* Empty state */
+		.empty-state {
+			text-align: center;
+			padding: 40px 20px;
+			color: var(--muted);
+		}
+		.empty-state h4 {
+			color: var(--text);
+			margin-bottom: 8px;
+			font-size: 1rem;
+		}
+		
 		/* Active call */
 		.active-call {
 			border: 1px solid var(--success);
@@ -234,6 +245,17 @@
 		}
 		.incoming-call h3 { color: var(--warning); }
 		.incoming-actions { display: flex; gap: 8px; margin-top: 12px; }
+		
+		/* Debug panel */
+		.debug-panel {
+			font-size: 0.75rem;
+			color: var(--muted);
+			background: rgba(0,0,0,0.3);
+			padding: 8px 12px;
+			border-radius: 6px;
+			margin-top: 8px;
+		}
+		.debug-line { margin: 2px 0; font-family: monospace; }
 		
 		/* API info collapsible */
 		details { margin-top: 24px; }
@@ -316,15 +338,15 @@
 			<div class="setup-grid">
 				<div class="input-group">
 					<label for="networkId">ZeroTier Network ID</label>
-					<input type="text" id="networkId" placeholder="e.g., a84ac5c123456789" maxlength="16">
+					<input type="text" id="networkId" placeholder="e.g., a84ac5c123456789" maxlength="16" autocomplete="off">
 				</div>
 				<div class="input-group">
 					<label for="myNodeId">Your Node ID</label>
-					<input type="text" id="myNodeId" placeholder="ZeroTier Node ID" maxlength="64">
+					<input type="text" id="myNodeId" placeholder="ZeroTier Node ID" maxlength="64" autocomplete="off">
 				</div>
 				<div class="input-group">
 					<label for="myName">Your Name</label>
-					<input type="text" id="myName" placeholder="Display name" maxlength="128">
+					<input type="text" id="myName" placeholder="Display name" maxlength="128" autocomplete="off">
 				</div>
 				<button id="registerBtn" class="btn" onclick="register()">Register</button>
 			</div>
@@ -332,7 +354,14 @@
 
 		<div class="card">
 			<h3>Network Nodes</h3>
-			<div id="nodes" class="node-list"></div>
+			<div id="nodes" class="node-list">
+				<div class="empty-state">
+					<h4>No nodes discovered yet</h4>
+					<p>Register first, then other nodes on the same ZeroTier network will appear here.</p>
+					<p><small>Make sure all nodes use the same Network ID.</small></p>
+				</div>
+			</div>
+			<div id="debug" class="debug-panel" style="display:none;"></div>
 		</div>
 
 		<div id="activeCall" class="card active-call" style="display:none;">
@@ -386,6 +415,17 @@ WS   /ws/{node_id}</code>
 		let callStartTime = null;
 		let callTimerInterval = null;
 		
+		// --- Debug ---
+		function debug(msg) {
+			const dbg = document.getElementById('debug');
+			if (dbg.style.display === 'none') return;
+			const line = document.createElement('div');
+			line.className = 'debug-line';
+			line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+			dbg.appendChild(line);
+			if (dbg.childElementCount > 20) dbg.removeChild(dbg.firstChild);
+		}
+		
 		// --- UI Helpers ---
 		function showToast(message, type = 'info') {
 			const container = document.getElementById('toastContainer');
@@ -396,20 +436,20 @@ WS   /ws/{node_id}</code>
 			setTimeout(() => {
 				toast.style.opacity = '0';
 				setTimeout(() => toast.remove(), 200);
-			}, 3000);
+			}, 4000);
 		}
 		
 		function setWSStatus(status) {
 			const dot = document.getElementById('wsDot');
 			const label = document.getElementById('wsStatus');
 			dot.className = 'status-dot ' + status;
-			label.textContent = status === 'online' ? 'Connected' : 
+			label.textContent = status === 'online' ? 'Connected' :
 			                  status === 'offline' ? 'Disconnected' : 'Connecting...';
 		}
 		
 		function updateNodeCount(count) {
 			const el = document.getElementById('nodeCount');
-			el.innerHTML = `<span class="status-indicator"><div class="status-dot online"></div>${count} node${count !== 1 ? 's' : ''}</span>`;
+			el.innerHTML = `<span class="status-indicator"><div class="status-dot ${count > 0 ? 'online' : 'offline'}"></div>${count} node${count !== 1 ? 's' : ''}</span>`;
 		}
 		
 		// --- Registration ---
@@ -424,22 +464,29 @@ WS   /ws/{node_id}</code>
 			}
 			
 			try {
+				debug(`Registering: ${nodeId} on network ${network} as ${name}`);
 				const res = await fetch('/register', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ id: nodeId, name, network_id: network, capabilities: ['audio'] })
 				});
 				
-				if (!res.ok) throw new Error('Registration failed');
+				if (!res.ok) {
+					const txt = await res.text();
+					throw new Error('Registration failed: ' + (txt || res.status));
+				}
 				
+				const node = await res.json();
 				myNode = nodeId;
 				networkId = network;
 				showToast(`Registered as ${name}`, 'success');
+				debug(`Registered successfully, myNode=${myNode}, network=${networkId}`);
 				
 				connectWebSocket();
 				startHeartbeat();
-				loadNodes();
-				pollInterval = setInterval(loadNodes, 5000);
+				loadNodes(); // immediate load
+				if (pollInterval) clearInterval(pollInterval);
+				pollInterval = setInterval(loadNodes, 5000); // fallback polling
 				
 				// Disable inputs
 				document.getElementById('networkId').disabled = true;
@@ -448,11 +495,13 @@ WS   /ws/{node_id}</code>
 				document.getElementById('registerBtn').disabled = true;
 			} catch (e) {
 				showToast('Registration error: ' + e.message, 'error');
+				debug('Register error: ' + e.message);
 			}
 		}
 		
 		async function startHeartbeat() {
-			await fetch('/heartbeat?node_id=' + myNode, { method: 'POST' });
+			debug('Starting heartbeat');
+			await fetch('/heartbeat?node_id=' + myNode, { method: 'POST' }).catch(() => {});
 			setInterval(() => {
 				fetch('/heartbeat?node_id=' + myNode, { method: 'POST' }).catch(() => {});
 			}, 30000);
@@ -462,16 +511,20 @@ WS   /ws/{node_id}</code>
 		function connectWebSocket() {
 			setWSStatus('connecting');
 			const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-			ws = new WebSocket(protocol + '//' + location.host + '/ws/' + myNode);
+			const wsUrl = protocol + '//' + location.host + '/ws/' + myNode;
+			debug('Connecting WS: ' + wsUrl);
+			
+			ws = new WebSocket(wsUrl);
 			
 			ws.onopen = () => {
 				setWSStatus('online');
 				showToast('Connected to signaling server', 'success');
+				debug('WS connected');
 			};
 			
 			ws.onmessage = async e => {
 				const msg = JSON.parse(e.data);
-				console.log('WS msg:', msg);
+				debug('WS msg: ' + msg.type);
 				switch(msg.type) {
 					case 'CALL_REQUEST':
 						currentCallId = msg.call_id;
@@ -489,6 +542,13 @@ WS   /ws/{node_id}</code>
 						showToast('Call rejected', 'info');
 						resetCallState();
 						break;
+					case 'CALL_END':
+						stopRingtone();
+						stopWebRTC();
+						document.getElementById('activeCall').style.display = 'none';
+						resetCallState();
+						showToast('Call ended', 'info');
+						break;
 					case 'SDP_OFFER':
 						if (msg.call_id === currentCallId) {
 							await handleSDPOffer(msg.sdp);
@@ -504,56 +564,79 @@ WS   /ws/{node_id}</code>
 							await pc.addIceCandidate(JSON.parse(msg.payload.candidate));
 						}
 						break;
-					case 'CALL_END':
-						stopRingtone();
-						stopWebRTC();
-						document.getElementById('activeCall').style.display = 'none';
-						resetCallState();
-						showToast('Call ended', 'info');
-						break;
 				}
 			};
 			
 			ws.onclose = () => {
 				setWSStatus('offline');
+				debug('WS closed, reconnecting...');
 				if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
 				wsReconnectTimer = setTimeout(connectWebSocket, 2000);
 			};
-			ws.onerror = () => setWSStatus('offline');
+			ws.onerror = (err) => {
+				setWSStatus('offline');
+				debug('WS error: ' + err);
+			};
 		}
 		
 		// --- Node fetching ---
 		async function loadNodes() {
-			const network = document.getElementById('networkId').value.trim();
-			if (!network) return;
+			if (!networkId) {
+				debug('No network ID, skipping load');
+				return;
+			}
 			
 			try {
-				const res = await fetch('/nodes?network_id=' + encodeURIComponent(network));
+				debug(`Fetching nodes for network: ${networkId}`);
+				const res = await fetch('/nodes?network_id=' + encodeURIComponent(networkId));
+				if (!res.ok) throw new Error('HTTP ' + res.status);
 				const nodes = await res.json();
+				debug(`Received ${nodes.length} nodes`);
+				
 				updateNodeCount(nodes.length);
 				
 				const container = document.getElementById('nodes');
-				container.innerHTML = nodes
-					.filter(n => n.id !== myNode)
-					.map(n => `
-						<div class="node ${n.status}">
-							<span class="node-id" title="${n.id}">${n.id}</span>
-							<span class="node-name">${escapeHtml(n.name)}</span>
-							<span class="node-meta">${n.capabilities?.join(', ') || ''}</span>
-							<span class="node-status ${n.status}">${n.status}</span>
-							<div class="node-actions">
-								<button class="btn btn-small" onclick="call('${n.id}')" ${n.status === 'offline' ? 'disabled' : ''}>
-									Call
-								</button>
-							</div>
+				const filtered = nodes.filter(n => n.id !== myNode);
+				debug(`Filtered to ${filtered.length} nodes (excluded self)`);
+				
+				if (filtered.length === 0) {
+					container.innerHTML = `
+						<div class="empty-state">
+							<h4>No other nodes discovered</h4>
+							<p>Other nodes on the same ZeroTier network will appear here.</p>
+							<p><small>Network ID: ${escapeHtml(networkId)}</small></p>
+							<p><small>Your Node ID: ${escapeHtml(myNode)}</small></p>
+							<p><em>Make sure other nodes are running and registered on the same network.</em></p>
 						</div>
-					`).join('');
+					`;
+					return;
+				}
+				
+				container.innerHTML = filtered.map(n => `
+					<div class="node ${n.status}" data-id="${escapeHtml(n.id)}">
+						<span class="node-id" title="${escapeHtml(n.id)}">${escapeHtml(n.id.substring(0, 12))}...</span>
+						<span class="node-name">${escapeHtml(n.name)}</span>
+						<span class="node-meta">${n.capabilities?.join(', ') || ''}</span>
+						<span class="node-status ${n.status}">${n.status}</span>
+						<div class="node-actions">
+							<button class="btn btn-small" onclick="call('${escapeHtml(n.id)}')" ${n.status === 'offline' ? 'disabled' : ''}>
+								Call
+							</button>
+						</div>
+					</div>
+				`).join('');
+				
 			} catch (e) {
 				console.error('Failed to load nodes:', e);
+				debug('Load nodes error: ' + e.message);
+				// Show error in UI
+				document.getElementById('nodeCount').innerHTML = 
+					'<span class="status-indicator"><div class="status-dot offline"></div>Error</span>';
 			}
 		}
 		
 		function escapeHtml(str) {
+			if (!str) return '';
 			const div = document.createElement('div');
 			div.textContent = str;
 			return div.innerHTML;
@@ -621,7 +704,9 @@ WS   /ws/{node_id}</code>
 			
 			currentCallId = crypto.randomUUID();
 			remotePeerId = toId;
-			currentCallId = crypto.randomUUID();
+			// currentCallId set once above - no duplicate
+			remotePeerId = toId;
+			// NOTE: currentCallId already set above - removed duplicate
 			
 			pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
 			setupPC(pc);
@@ -788,7 +873,7 @@ WS   /ws/{node_id}</code>
 			callTimerInterval = setInterval(() => {
 				const seconds = Math.floor((Date.now() - callStartTime) / 1000);
 				const mins = String(Math.floor(seconds / 60)).padStart(2, '0');
-			 const secs = String(seconds % 60).padStart(2, '0');
+				const secs = String(seconds % 60).padStart(2, '0');
 				document.getElementById('callTimer').textContent = `${mins}:${secs}`;
 			}, 1000);
 		}
@@ -818,14 +903,47 @@ WS   /ws/{node_id}</code>
 		
 		function stopRingtone() {
 			if (ringtoneCtx) {
-				ringtoneCtx.osc?.stop();
-				ringtoneCtx.close();
+				try {
+					ringtoneCtx.osc?.stop();
+					ringtoneCtx.close();
+				} catch(e) {}
 				ringtoneCtx = null;
 			}
 		}
 		
-		// Init
+		// --- Init ---
 		setWSStatus('offline');
+		
+		// Enable debug panel with ?debug
+		if (location.search.includes('debug')) {
+			document.getElementById('debug').style.display = 'block';
+		}
+		
+		// Pre-fill from localStorage if available
+		window.addEventListener('load', () => {
+			const saved = localStorage.getItem('zerophone_config');
+			if (saved) {
+				try {
+					const cfg = JSON.parse(saved);
+					document.getElementById('networkId').value = cfg.network_id || '';
+					document.getElementById('myNodeId').value = cfg.node_id || '';
+					document.getElementById('myName').value = cfg.name || '';
+				} catch(e) {}
+			}
+		});
+		
+		// Save config on register (best effort)
+		const origRegister = register;
+		register = async function() {
+			const result = await origRegister.apply(this, arguments);
+			const cfg = {
+				network_id: document.getElementById('networkId').value,
+				node_id: document.getElementById('myNodeId').value,
+				name: document.getElementById('myName').value
+			};
+			try { localStorage.setItem('zerophone_config', JSON.stringify(cfg)); } catch(e) {}
+			return result;
+		};
 	</script>
 </body>
 </html>
