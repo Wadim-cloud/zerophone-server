@@ -246,15 +246,10 @@ func clientLoop() {
 }
 
 func broadcastPresenceLoop() {
-	knownPeers := []string{}
-	if peersEnv := os.Getenv("ZEROPHONE_PEERS"); peersEnv != "" {
-		knownPeers = strings.Split(peersEnv, ",")
-	}
-
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
-		// Broadcast via ZeroMQ if available
+		// Broadcast own presence
 		if clusterModule != nil {
 			p := map[string]string{
 				"node_id":  clusterModule.GetLocalNode().ID,
@@ -266,26 +261,47 @@ func broadcastPresenceLoop() {
 			clusterModule.BroadcastNodeUpdate(data)
 		}
 
-		// HTTP ping known peers
-		for _, peer := range knownPeers {
-			go func(p string) {
-				http.Get("http://" + p + "/ping?node_id=" + nodeName)
-			}(peer)
+		// Also broadcast via HTTP to discovery addresses on ZeroTier
+		if localIP != "" {
+			// Try common ZeroTier broadcast addresses
+			ips := []string{
+				"10.121.15.223:8080", // Wadim's ZeroTier IP
+				"10.121.15.208:8080", // Common base
+			}
+			for _, ip := range ips {
+				if ip != localIP+":8080" {
+					go func(addr string) {
+						req, _ := http.NewRequest("GET", "http://"+addr+"/ping?node_id="+nodeName+"&ip="+localIP+"&network="+networkID, nil)
+						client := &http.Client{Timeout: 2 * time.Second}
+						client.Do(req)
+					}(ip)
+				}
+			}
 		}
 
-		// Also try HTTP discovery on ZeroTier network
-		if localIP != "" {
-			subnets := []string{
-				"10.121.15.255:8080",
-				"10.147.17.255:8080",
-			}
-			for _, subnet := range subnets {
-				go func(addr string) {
-					resp, err := http.Get("http://" + addr + "/ping?node_id=" + nodeName)
-					if err == nil {
-						resp.Body.Close()
-					}
-				}(subnet)
+		// Also check /nodes endpoint from self to register peers
+		if clusterModule != nil {
+			allNodes := clusterModule.GetNodeRegistry().GetAll()
+			for _, n := range allNodes {
+				if n.ZeroTierIP != "" && n.ZeroTierIP != localIP {
+					go func(ip string) {
+						req, _ := http.NewRequest("GET", "http://"+ip+":8080/presence", nil)
+						client := &http.Client{Timeout: 2 * time.Second}
+						resp, err := client.Do(req)
+						if err == nil {
+							var nodes []*Peer
+							json.NewDecoder(resp.Body).Decode(&nodes)
+							resp.Body.Close()
+							peersMu.Lock()
+							for _, p := range nodes {
+								if p.ID != clusterModule.GetLocalNode().ID {
+									peers[p.ID] = p
+								}
+							}
+							peersMu.Unlock()
+						}
+					}(n.ZeroTierIP)
+				}
 			}
 		}
 	}
@@ -465,21 +481,29 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 
 func handlePing(w http.ResponseWriter, r *http.Request) {
 	nodeID := r.URL.Query().Get("node_id")
+	nodeIP := r.URL.Query().Get("ip")
+	networkID := r.URL.Query().Get("network")
+
 	if nodeID != "" {
 		peersMu.Lock()
 		if _, ok := peers[nodeID]; !ok {
 			peers[nodeID] = &Peer{
-				ID:       nodeID,
-				Name:     nodeID,
-				Status:   "online",
-				LastSeen: time.Now().Unix(),
-				IP:       r.RemoteAddr,
+				ID:        nodeID,
+				Name:      nodeID,
+				Status:    "online",
+				LastSeen:  time.Now().Unix(),
+				IP:        nodeIP,
+				NetworkID: networkID,
 			}
 		} else {
 			peers[nodeID].Status = "online"
 			peers[nodeID].LastSeen = time.Now().Unix()
+			if nodeIP != "" {
+				peers[nodeID].IP = nodeIP
+			}
 		}
 		peersMu.Unlock()
+		log.Printf("[PRESENCE] %s from %s (network: %s)", nodeID, nodeIP, networkID)
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
