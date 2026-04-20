@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== ZeroPhone Deployment Script (Docker) ==="
+echo "=== ZeroPhone Deployment Script (Docker Compose) ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -9,30 +9,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if ! command -v docker &> /dev/null; then
     echo "[*] Installing Docker..."
     curl -fsSL https://get.docker.com | sh
-    sudo usermod -aG docker $USER
+fi
+
+# Check docker-compose
+if ! command -v docker-compose &> /dev/null; then
+    echo "[*] Installing docker-compose..."
+    sudo apt install -y docker-compose
 fi
 
 cd "$SCRIPT_DIR"
 
-# Build Docker image
-echo "[*] Building Docker image..."
-docker build -t zerophone:latest .
-
-# Stop existing container if running
-docker stop zerophone 2>/dev/null || true
-docker rm zerophone 2>/dev/null || true
-
-# Run container
-echo "[*] Starting ZeroPhone container..."
-docker run -d \
-    --name zerophone \
-    --network host \
-    -e ZEROPHONE_CLUSTER=1 \
-    -v zerophone-data:/data \
-    zerophone:latest
+# Build and start with docker-compose
+echo "[*] Building and starting ZeroPhone..."
+docker-compose up -d --build
 
 echo ""
 echo "=== ZeroPhone Deployed Successfully! ==="
 echo "Web UI: http://localhost:8080"
-echo "Status: docker ps"
-echo "Logs:   docker logs zerophone"
+echo "Status: docker-compose ps"
+echo "Logs:   docker-compose logs -f"
+echo "Stop:   docker-compose down"
