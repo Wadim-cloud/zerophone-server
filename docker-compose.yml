@@ -3,12 +3,55 @@ version: '3.8'
 services:
   zerophone:
     build: .
-    ports:
-      - "8080:8080"
+    container_name: zerophone
+    environment:
+      - ZEROPHONE_CLUSTER=1
+      - ZEROTIER_IP=${ZEROTIER_IP:-}
+      - ZEROTIER_NETWORK=${ZEROTIER_NETWORK:-flgubtoy}
+      - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
+      - ZEROPHONE_DATA=/data
+      - ZEROPHONE_PEERS=${ZEROPHONE_PEERS:-}
     volumes:
-      - zerophone_data:/root
-      - ./data:/data
+      - zerophone-data:/data
+      - ./static:/app/static:ro
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+      - "${ZMQ_ROUTER_PORT:-5555}:5555"
+      - "${ZMQ_PUB_PORT:-5556}:5556"
+      - "${ZMQ_DISCOVERY_PORT:-5557}:5557"
+      - "${ZMQ_ASYNC_PORT:-5558}:5558"
+    networks:
+      - zerophone-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  zerophone-node:
+    image: zerophone:latest
+    environment:
+      - ZEROPHONE_CLUSTER=1
+      - ZEROTIER_IP=${ZEROTIER_IP:-}
+      - ZEROTIER_NETWORK=${ZEROTIER_NETWORK:-flgubtoy}
+      - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
+      - ZEROPHONE_DATA=/data
+      - ZEROPHONE_PEERS=zerophone:5555
+    volumes:
+      - zerophone-node-data:/data
+    ports:
+      - "${HTTP_PORT_NODE:-8081}:8080"
+    networks:
+      - zerophone-net
+    restart: unless-stopped
+    depends_on:
+      - zerophone
+
+networks:
+  zerophone-net:
+    driver: bridge
 
 volumes:
-  zerophone_data:
+  zerophone-data:
+  zerophone-node-data:
