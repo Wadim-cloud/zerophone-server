@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -150,8 +149,6 @@ var (
 	addr       = flag.String("addr", ":8080", "http listen address")
 	serverURL  = flag.String("server", "", "server URL to connect to")
 	configPort = flag.Int("port", 8081, "cluster port")
-	certFile   = flag.String("cert", "", "TLS certificate file")
-	keyFile    = flag.String("key", "", "TLS key file")
 
 	clusterModule    *cluster.ClusterModule
 	peers            = make(map[string]*Peer)
@@ -268,8 +265,8 @@ func main() {
 	router.HandleFunc("/secure", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"secure": *certFile != "",
-			"tls":    r.TLS != nil,
+			"secure": false,
+			"tls":    false,
 			"client": isClient,
 		})
 	})
@@ -292,26 +289,7 @@ func main() {
 	}
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
-
-	if *certFile != "" && *keyFile != "" {
-		server := &http.Server{
-			Addr:    bindAddr,
-			Handler: router,
-			TLSConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		}
-		log.Printf("Attempting HTTPS on %s", bindAddr)
-		if err := server.ListenAndServeTLS(*certFile, *keyFile); err != nil {
-			log.Printf("HTTPS failed, falling back to HTTP: %v", err)
-			log.Fatal(http.ListenAndServe(bindAddr, router))
-		}
-	} else {
-		if isClient {
-			log.Printf("Running as client - connect to %s", serverAddr)
-		}
-		log.Fatal(http.ListenAndServe(bindAddr, router))
-	}
+	log.Fatal(http.ListenAndServe(bindAddr, router))
 }
 
 func getNodeName() string {
