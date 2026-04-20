@@ -454,14 +454,19 @@
 		// ICE servers with TURN fallback
 		const rtcConfig = {
 			iceServers: [
-				{urls: 'stun:stun.l.google.com:19302'},
-				{urls: 'stun:stun1.l.google.com:19302'},
-				{urls: 'stun:stun2.l.google.com:19302'},
-				{urls: 'turn:turn.l.google.com:3478', username: 'guest', credential: 'somerealm'},
-				{urls: 'turn:turn1.l.google.com:3478', username: 'guest', credential: 'somerealm'},
-				{urls: 'turn:turn2.l.google.com:3478', username: 'guest', credential: 'somerealm'}
+				{ urls: 'stun:stun.l.google.com:19302' },
+				{ urls: 'stun:stun1.l.google.com:19302' },
+				{ urls: 'stun:stun2.l.google.com:19302' },
+				{ urls: 'stun:stun3.l.google.com:19302' },
+				{ 
+					urls: 'turn:global-turn.relay.metered.ca:443',
+					username: 'free',
+					credential: 'free'
+				}
 			],
-			iceCandidatePoolSize: 10
+			iceCandidatePoolSize: 10,
+			bundlePolicy: 'balanced',
+			iceTransports: 'all'
 		};
 		
 		// Codec negotiation
@@ -474,26 +479,70 @@
 		async function initAudio() {
 			if (localStream) return localStream;
 			
-			if (!canDoAudio()) {
-				log('Audio not available in this browser', 'error');
+			if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+				log('Browser does not support audio', 'error');
 				return null;
 			}
 			
+			const audioConstraints = {
+				audio: {
+					echoCancellation: { ideal: true },
+					noiseSuppression: { ideal: true },
+					autoGainControl: { ideal: true },
+					voiceIsolation: { ideal: true },
+					sampleRate: 48000,
+					sampleSize: 16,
+					channelCount: 1,
+					latency: 0,
+					deviceId: undefined,
+					groupId: undefined
+				},
+				video: false
+			};
+			
 			try {
-				localStream = await navigator.mediaDevices.getUserMedia({
-					audio: {
-						echoCancellation: true,
-						noiseSuppression: true,
-						autoGainControl: true
-					},
-					video: false
-				});
-				log('Microphone connected');
+				log('Requesting microphone with all optimizations...');
+				localStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
+				
+				const audioTrack = localStream.getAudioTracks()[0];
+				if (audioTrack) {
+					log('Mic: ' + audioTrack.label);
+					log('Enabled: ' + audioTrack.enabled);
+					log('ID: ' + audioTrack.id);
+					
+					const settings = audioTrack.getSettings();
+					log('SampleRate: ' + settings.sampleRate);
+					log('Channels: ' + settings.channelCount);
+					log('Echo: ' + settings.echoCancellation);
+					log('Noise: ' + settings.noiseSuppression);
+				}
+				
+				log('Microphone connected with full settings');
 				return localStream;
 			} catch(e) {
 				log('Mic error: ' + e.message, 'error');
-				return null;
+				
+				try {
+					log('Trying minimal mic...');
+					localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+					log('Mic connected (fallback)');
+					return localStream;
+				} catch(e2) {
+					log('Mic fallback failed: ' + e2.message, 'error');
+					return null;
+				}
 			}
+		}
+		
+		function setupAudioPlayer(audioEl) {
+			audioEl.autoplay = true;
+			audioEl.playsInline = true;
+			audioEl.muted = false;
+			audioEl.volume = 1.0;
+			
+			if (audioEl.sinkId) audioEl.sinkId = 'default';
+			
+			return audioEl;
 		}
 		
 		async function startPeerConnection() {
@@ -605,12 +654,22 @@
 		async function createAndSendOffer() {
 			const pc = await startPeerConnection();
 			
-			const codecParams = codecCapabilities[selectedCodec];
-			log('Creating offer with ' + selectedCodec + ' (' + codecParams.clockRate + 'Hz)');
+			const audioSender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+			if (audioSender) {
+				const params = audioSender.getParameters();
+				params.codecs = [{
+					mimeType: 'audio/opus',
+					clockRate: 48000,
+					channelCount: 1,
+					bitrate: 48000
+				}];
+				await audioSender.setParameters(params);
+			}
 			
 			const offer = await pc.createOffer({
 				offerToReceiveAudio: 1,
-				offerToReceiveVideo: 0
+				offerToReceiveVideo: 0,
+				voiceActivityDetection: true
 			});
 			
 			await pc.setLocalDescription(offer);
@@ -625,7 +684,7 @@
 				})
 			});
 			
-			// Start ICE timeout
+			log('Offer created with optimal audio settings');
 			startICETimeout(pc, callId);
 		}
 		
