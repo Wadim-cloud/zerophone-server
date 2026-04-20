@@ -73,21 +73,31 @@ func (h *WSHub) Run() {
 	}
 }
 
-func (h *WSHub) SendTo(nodeID string, msg Message) {
+func (h *WSHub) SendTo(nodeID string, msg Message) bool {
 	data, err := json.Marshal(msg)
 	if err != nil {
-		return
+		return false
 	}
 
 	h.mu.RLock()
 	client, ok := h.clients[nodeID]
 	h.mu.RUnlock()
 
-	if ok {
-		select {
-		case client.send <- data:
-		default:
-		}
+	if !ok {
+		return false
+	}
+
+	select {
+	case client.send <- data:
+		return true
+	default:
+		close(client.send)
+		go func() {
+			h.mu.Lock()
+			delete(h.clients, nodeID)
+			h.mu.Unlock()
+		}()
+		return false
 	}
 }
 

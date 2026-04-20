@@ -38,3 +38,17 @@ docker-run:
 # Initialize database schema
 init-db:
 	@echo "Database will be created automatically on first run"
+
+# Multi-node cluster simulation (runs 3 nodes locally on different ports)
+SIM_NODES ?= 3
+SIM_BASE_PORT ?= 9080
+
+simulate:
+	@echo "Starting $(SIM_NODES) simulated cluster nodes..."
+	@for i in $$(seq 0 $$(($(SIM_NODES)-1))); do \
+		port=$$(($(SIM_BASE_PORT) + $$i)); \
+		echo "Node $$i: http://localhost:$$port ; \
+		ZEROTIER_IP=10.147.17.$$i ZEROPHONE_CLUSTER=1 \
+		./zerophone --addr :$$port --db zerophone_$$i.db & \
+	done; \
+	wait

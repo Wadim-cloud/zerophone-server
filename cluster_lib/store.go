@@ -6,13 +6,26 @@ import (
 )
 
 type Store struct {
-	mu sync.RWMutex
-	db *Database
+	mu          sync.RWMutex
+	db          *Database
+	announceFn func(*Node)
 }
 
 func NewStore() *Store {
 	return &Store{
 		db: nil, // will be initialized in main
+	}
+}
+
+func (s *Store) SetAnnounceFn(fn func(*Node)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.announceFn = fn
+}
+
+func (s *Store) Announce(node *Node) {
+	if s.announceFn != nil {
+		s.announceFn(node)
 	}
 }
 
@@ -22,7 +35,7 @@ func (s *Store) SetDB(db *Database) {
 	s.db = db
 }
 
-func (s *Store) RegisterNode(id, name, networkID string, caps []string) *Node {
+func (s *Store) RegisterNode(id, name, networkID string, caps []string, serverID string) *Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -30,13 +43,21 @@ func (s *Store) RegisterNode(id, name, networkID string, caps []string) *Node {
 		ID:           id,
 		Name:         name,
 		NetworkID:    networkID,
+		ServerID:     serverID,
 		LastSeen:     time.Now().Unix(),
 		Status:       "offline",
 		Capabilities: caps,
 	}
 
-	_ = s.db.CreateNode(id, name, networkID, caps)
+	_ = s.db.CreateNode(id, name, networkID, caps, serverID)
+	s.Announce(node)
 	return node
+}
+
+func (s *Store) UpsertNode(node *Node) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.UpsertNode(node)
 }
 
 func (s *Store) Heartbeat(nodeID string) bool {

@@ -1,5 +1,8 @@
 # Binaries
-$(BINARY_NAME)
+zerophone
+zerophone-client
+zerophone-new
+zerophone-server
 *.exe
 *.exe~
 *.dll
