@@ -2,33 +2,25 @@ services:
   zerophone:
     build: .
     network_mode: host
-    environment:
-      - ZEROPHONE_CLUSTER=1
-      - ZEROTIER_IP=${ZEROTIER_IP:-}
-      - ZEROTIER_NETWORK=${ZEROTIER_NETWORK:-flgubtoy}
-      - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
-      - ZEROPHONE_DATA=/data
-      - ZEROPHONE_PEERS=${ZEROPHONE_PEERS:-}
-      - PUBLIC_IP=${PUBLIC_IP:-}
     volumes:
       - zerophone-data:/data
       - ./static:/app/static:ro
-    restart: unless-stopped
+      - ./cert.pem:/app/cert.pem:ro
+      - ./key.pem:/app/key.pem:ro
+    command: ["./zerophone", "--addr", ":8080", "--cert", "cert.pem", "--key", "key.pem"]
+    environment:
+      - ZEROPHONE_CLUSTER=1
 
   zerophone-node:
     build: .
     network_mode: host
-    environment:
-      - ZEROPHONE_CLUSTER=1
-      - ZEROTIER_IP=${ZEROTIER_IP:-}
-      - ZEROTIER_NETWORK=${ZEROTIER_NETWORK:-flgubtoy}
-      - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
-      - ZEROPHONE_DATA=/data
-      - ZEROPHONE_PEERS=127.0.0.1:5555
-      - PUBLIC_IP=${PUBLIC_IP:-}
     volumes:
       - zerophone-node-data:/data
-    restart: unless-stopped
+      - ./cert.pem:/app/cert.pem:ro
+      - ./key.pem:/app/key.pem:ro
+    command: ["./zerophone", "--addr", ":8080", "--cert", "cert.pem", "--key", "key.pem"]
+    environment:
+      - ZEROPHONE_CLUSTER=1
     depends_on:
       - zerophone
 
