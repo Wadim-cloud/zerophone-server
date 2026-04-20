@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== ZeroPhone Deployment Script (Docker Compose) ==="
+echo "=== ZeroPhone Deployment Script ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -13,13 +13,16 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# Build and start with docker compose (v2, not docker-compose v1)
+# Fix docker-compose v1 Python issue
+echo "[*] Fixing docker-compose..."
+sudo pip install setuptools 2>/dev/null || true
+
+# Build and start
 echo "[*] Building and starting ZeroPhone..."
-docker compose up -d --build
+docker-compose up -d --build
 
 echo ""
 echo "=== ZeroPhone Deployed Successfully! ==="
 echo "Web UI: http://localhost:8080"
-echo "Status: docker compose ps"
-echo "Logs:   docker compose logs -f"
-echo "Stop:   docker compose down"
+echo "Status: docker-compose ps"
+echo "Logs:   docker-compose logs -f"
