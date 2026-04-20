@@ -30,7 +30,7 @@ services:
       retries: 3
 
   zerophone-node:
-    image: zerophone:latest
+    build: .
     environment:
       - ZEROPHONE_CLUSTER=1
       - ZEROTIER_IP=${ZEROTIER_IP:-}

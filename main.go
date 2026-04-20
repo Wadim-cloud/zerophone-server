@@ -243,7 +243,10 @@ func clientLoop() {
 }
 
 func broadcastPresenceLoop() {
-	knownPeers := []string{"10.121.15.208:8080"} // Auto-discover
+	knownPeers := []string{}
+	if peersEnv := os.Getenv("ZEROPHONE_PEERS"); peersEnv != "" {
+		knownPeers = strings.Split(peersEnv, ",")
+	}
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()

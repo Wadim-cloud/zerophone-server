@@ -6,8 +6,8 @@ import (
 )
 
 type Store struct {
-	mu          sync.RWMutex
-	db          *Database
+	mu         sync.RWMutex
+	db         Database
 	announceFn func(*Node)
 }
 
@@ -29,7 +29,7 @@ func (s *Store) Announce(node *Node) {
 	}
 }
 
-func (s *Store) SetDB(db *Database) {
+func (s *Store) SetDB(db Database) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.db = db

@@ -5,7 +5,7 @@ DB_PATH=zerophone.db
 PORT=8080
 
 build:
-	go build -o $(BINARY_NAME) ./cmd/zerophone
+	go build -o $(BINARY_NAME) .
 
 run: build
 	./$(BINARY_NAME) --db $(DB_PATH) --addr :$(PORT)
@@ -22,7 +22,7 @@ deps:
 	go mod tidy
 
 install:
-	go install ./...
+	go install .
 
 # Development with auto-reload (requires air)
 dev:
