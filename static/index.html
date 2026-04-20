@@ -446,6 +446,10 @@
 		// WebRTC with ICE, TURN fallback, and codec negotiation
 		let localStream = null;
 		let peerConnection = null;
+
+		function canDoAudio() {
+			return !!(window.navigator && window.navigator.mediaDevices && window.navigator.mediaDevices.getUserMedia);
+		}
 		
 		// ICE servers with TURN fallback
 		const rtcConfig = {
@@ -468,17 +472,23 @@
 		};
 		
 		async function initAudio() {
+			if (localStream) return localStream;
+			
+			if (!canDoAudio()) {
+				log('Audio not available in this browser', 'error');
+				return null;
+			}
+			
 			try {
 				localStream = await navigator.mediaDevices.getUserMedia({
 					audio: {
 						echoCancellation: true,
 						noiseSuppression: true,
-						autoGainControl: true,
-						deviceId: {ideal: 'default'}
+						autoGainControl: true
 					},
 					video: false
 				});
-				log('Microphone connected (codec: ' + selectedCodec + ')');
+				log('Microphone connected');
 				return localStream;
 			} catch(e) {
 				log('Mic error: ' + e.message, 'error');
@@ -776,7 +786,10 @@
 			if (logEl.children.length > 50) logEl.lastChild.remove();
 		}
 		
-		init();
+		document.addEventListener('DOMContentLoaded', async () => {
+			log('ZeroPhone ready');
+			await init();
+		});
 		setInterval(refreshContacts, 10000);
 
 		// Debug display with state, ICE, codec info
