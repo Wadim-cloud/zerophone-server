@@ -326,32 +326,7 @@
 		}
 		
 		// Start call
-		async function startCall(peerId) {
-			if (callState !== 'idle') return;
-			callPeer = peerId;
-			callId = Math.random().toString(36).substr(2, 9);
-			callState = 'calling';
-			playSound('dial');
-			showScreen('outgoing-screen');
-			document.getElementById('outgoing-callee').textContent = peers.find(p => p.id === peerId)?.name || peerId;
-			log('Calling ' + peerId + '...', 'sent');
-			
-			try {
-				const r = await fetch(SERVER + '/call', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({to: peerId})
-				});
-				const data = await r.json();
-				if (data.call_id) {
-					callId = data.call_id;
-					log('Call initiated: ' + callId, 'sent');
-				}
-			} catch(e) {
-				log('Call failed: ' + e, 'error');
-				endCall();
-			}
-		}
+		// Removed - now uses updated version in WebRTC section below
 		
 		// SDP Exchange
 		async function startSDP() {
@@ -382,21 +357,7 @@
 		}
 		
 		// Answer call
-		async function answerCall() {
-			playSound('connect');
-			callState = 'active';
-			showScreen('active-screen');
-			document.getElementById('call-peer').textContent = document.getElementById('incoming-caller').textContent;
-			log('Call answered', 'recv');
-			startTimer();
-			
-			// Send acceptance
-			await fetch(SERVER + '/call/respond', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({call_id: callId, status: 'accepted'})
-			});
-		}
+		// Removed - now uses updated version in WebRTC section below
 		
 		// Reject call
 		async function rejectCall() {
@@ -411,22 +372,7 @@
 		}
 		
 		// End call
-		async function endCall() {
-			playSound('end');
-			if (callTimer) clearInterval(callTimer);
-			callState = 'idle';
-			callSeconds = 0;
-			log('Call ended', 'recv');
-			
-			await fetch(SERVER + '/call/end', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({call_id: callId, to: callPeer})
-			});
-			
-			showScreen('idle-screen');
-			refreshContacts();
-		}
+		// Removed - now uses updated version in WebRTC section below
 		
 		// Timer
 		function startTimer() {
@@ -454,6 +400,252 @@
 			el.innerHTML = `<div class="log-entry ${type}">${new Date().toLocaleTimeString()} ${msg}</div>` + el.innerHTML;
 		}
 		
+		// WebRTC for audio calls - Best Practices
+let localStream = null;
+let peerConnection = null;
+const rtcConfig = {
+    iceServers: [
+        // STUN servers for NAT traversal
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+    ],
+    iceCandidatePoolSize: 10
+};
+
+async function initAudio() {
+    try {
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            },
+            video: false
+        });
+        log('Microphone connected');
+        return localStream;
+    } catch(e) {
+        log('Mic error: ' + e.message, 'error');
+        return null;
+    }
+}
+
+async function startPeerConnection() {
+    if (peerConnection) {
+        peerConnection.close();
+    }
+    
+    if (!localStream) {
+        await initAudio();
+    }
+    
+    peerConnection = new RTCPeerConnection(rtcConfig);
+    
+    // Add local tracks
+    if (localStream) {
+        localStream.getTracks().forEach(track => {
+            peerConnection.addTrack(track, localStream);
+        });
+    }
+    
+    // Handle incoming streams
+    peerConnection.ontrack = (event) => {
+        const stream = event.streams[0];
+        log('Receiving audio from: ' + stream.id);
+        
+        let audioEl = document.getElementById('remote-audio');
+        if (!audioEl) {
+            audioEl = document.createElement('audio');
+            audioEl.id = 'remote-audio';
+            audioEl.autoplay = true;
+            audioEl.playsInline = true;
+            document.body.appendChild(audioEl);
+        }
+        audioEl.srcObject = stream;
+    };
+    
+    // ICE candidate handling
+    peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+            sendICE({
+                call_id: callId,
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex
+            });
+        }
+    };
+    
+    // Connection state
+    peerConnection.onconnectionstatechange = () => {
+        const state = peerConnection.connectionState;
+        log('WebRTC: ' + state);
+        
+        switch(state) {
+            case 'connected':
+                callState = 'active';
+                showScreen('active-screen');
+                playSound('connect');
+                startTimer();
+                break;
+            case 'disconnected':
+            case 'failed':
+                log('Call lost', 'error');
+                endCall();
+                break;
+            case 'closed':
+                break;
+        }
+    };
+    
+    // ICE connection state
+    peerConnection.oniceconnectionstatechange = () => {
+        log('ICE: ' + peerConnection.iceConnectionState);
+    };
+    
+    return peerConnection;
+}
+
+async function sendICE(data) {
+    try {
+        await fetch(SERVER + '/ice/candidate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        });
+    } catch(e) {}
+}
+
+async function createAndSendOffer() {
+    const pc = await startPeerConnection();
+    
+    const offer = await pc.createOffer({
+        offerToReceiveAudio: 1,
+        offerToReceiveVideo: 0
+    });
+    
+    await pc.setLocalDescription(offer);
+    
+    // Send via signaling
+    await fetch(SERVER + '/sdp/offer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            call_id: callId,
+            sdp: JSON.stringify(pc.localDescription),
+            to: callPeer
+        })
+    });
+}
+
+async function handleOffer(sdp) {
+    const pc = await startPeerConnection();
+    
+    await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(sdp)));
+    
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+    
+    // Send answer
+    await fetch(SERVER + '/sdp/answer', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            call_id: callId,
+            sdp: JSON.stringify(pc.localDescription)
+        })
+    });
+}
+
+async function handleAnswer(sdp) {
+    if (!peerConnection) return;
+    
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(JSON.parse(sdp)));
+}
+
+// Update startCall
+async function startCall(peerId) {
+    if (callState !== 'idle') return;
+    callPeer = peerId;
+    callId = Math.random().toString(36).substr(2, 9);
+    callState = 'calling';
+    playSound('dial');
+    showScreen('outgoing-screen');
+    document.getElementById('outgoing-callee').textContent = peers.find(p => p.id === peerId)?.name || peerId;
+    log('Calling ' + peerId + '...');
+    
+    try {
+        // Ensure we have audio
+        await initAudio();
+        
+        // Create WebRTC offer
+        await createAndSendOffer();
+        
+        // Also notify via HTTP
+        await fetch(SERVER + '/call', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({to: peerId, call_id: callId})
+        });
+    } catch(e) {
+        log('Call failed: ' + e.message, 'error');
+        endCall();
+    }
+}
+
+// Update answerCall
+async function answerCall() {
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    
+    callState = 'active';
+    showScreen('active-screen');
+    document.getElementById('call-peer').textContent = document.getElementById('incoming-caller').textContent;
+    log('Answering call...');
+    playSound('connect');
+    startTimer();
+    
+    await fetch(SERVER + '/call/respond', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({call_id: callId, status: 'accepted'})
+    });
+}
+
+// Update endCall
+async function endCall() {
+    playSound('end');
+    
+    if (peerConnection) {
+        peerConnection.close();
+        peerConnection = null;
+    }
+    
+    if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+        localStream = null;
+    }
+    
+    if (callTimer) clearInterval(callTimer);
+    callState = 'idle';
+    callSeconds = 0;
+    log('Call ended');
+    
+    try {
+        await fetch(SERVER + '/call/end', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({call_id: callId, to: callPeer})
+        });
+    } catch(e) {}
+    
+    showScreen('idle-screen');
+    refreshContacts();
+}
+
 		// Start
 		init();
 		setInterval(refreshContacts, 10000);
