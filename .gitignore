@@ -50,3 +50,6 @@ build/
 # Temporary files
 tmp/
 temp/
+
+# TLS certificates
+*.pem
