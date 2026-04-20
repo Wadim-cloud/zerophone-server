@@ -3,12 +3,16 @@ set -e
 
 echo "=== ZeroPhone Deployment Script ==="
 
-# Install dependencies (skip update to avoid kernel header errors)
+# Get current directory (where this script is)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Install dependencies
 echo "[*] Installing dependencies..."
 sudo apt install -y gcc musl-dev pkg-config libzmq3-dev curl 2>/dev/null || true
 
 # Build zerophone
 echo "[*] Building zerophone..."
+cd "$SCRIPT_DIR"
 CGO_ENABLED=1 go build -o zerophone .
 
 # Create data directory
@@ -17,7 +21,7 @@ sudo mkdir -p /var/lib/zerophone
 
 # Create systemd service
 echo "[*] Installing systemd service..."
-sudo tee /etc/systemd/system/zerophone.service > /dev/null << 'EOF'
+sudo tee /etc/systemd/system/zerophone.service > /dev/null << EOF
 [Unit]
 Description=ZeroPhone VoIP Server
 After=network.target
@@ -25,7 +29,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/var/lib/zerophone
-ExecStart=/home/$SUDO_USER/zerophone/zerophone --addr :8080
+ExecStart=${SCRIPT_DIR}/zerophone --addr :8080
 Restart=always
 Environment=ZEROPHONE_CLUSTER=1
 
