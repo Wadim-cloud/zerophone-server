@@ -295,22 +295,17 @@ func main() {
 
 	if *certFile != "" && *keyFile != "" {
 		server := &http.Server{
-			Addr:    ":https",
+			Addr:    bindAddr,
 			Handler: router,
 			TLSConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
 		}
-		log.Printf("HTTPS enabled")
-
-		go func() {
-			http.ListenAndServe(":http", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Strict-Transport-Security", "max-age=31536000")
-				http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
-			}))
-		}()
-
-		log.Fatal(server.ListenAndServeTLS(*certFile, *keyFile))
+		log.Printf("Attempting HTTPS on %s", bindAddr)
+		if err := server.ListenAndServeTLS(*certFile, *keyFile); err != nil {
+			log.Printf("HTTPS failed, falling back to HTTP: %v", err)
+			log.Fatal(http.ListenAndServe(bindAddr, router))
+		}
 	} else {
 		if isClient {
 			log.Printf("Running as client - connect to %s", serverAddr)
