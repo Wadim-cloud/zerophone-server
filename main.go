@@ -177,8 +177,10 @@ func detectZeroTier() (string, string) {
 		addrs, _ := iface.Addrs()
 		for _, addr := range addrs {
 			ipStr := strings.Split(addr.String(), "/")[0]
-			if isZeroTierIP(ipStr) {
-				return ipStr, strings.TrimPrefix(iface.Name, "zt")
+			if strings.HasPrefix(ipStr, "fd") || strings.HasPrefix(ipStr, "10.") {
+				networkID := strings.TrimPrefix(iface.Name, "zt")
+				log.Printf("[ZEROTIER] Detected: %s on %s", ipStr, iface.Name)
+				return ipStr, networkID
 			}
 		}
 	}
@@ -186,10 +188,6 @@ func detectZeroTier() (string, string) {
 		return zt, os.Getenv("ZEROTIER_NETWORK")
 	}
 	return "", ""
-}
-
-func isZeroTierIP(ip string) bool {
-	return strings.HasPrefix(ip, "fd") || strings.HasPrefix(ip, "10.")
 }
 
 func getDataDir() string {
@@ -457,6 +455,20 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	peersMu.RUnlock()
 
+	ztInterface := ""
+	if localIP != "" {
+		ifaces, _ := net.Interfaces()
+		for _, iface := range ifaces {
+			addrs, _ := iface.Addrs()
+			for _, addr := range addrs {
+				if strings.Split(addr.String(), "/")[0] == localIP {
+					ztInterface = iface.Name
+					break
+				}
+			}
+		}
+	}
+
 	status := map[string]interface{}{
 		"version":       "1.0.0",
 		"node_name":     nodeName,
@@ -464,6 +476,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		"uptime":        time.Since(started).String(),
 		"ip":            localIP,
 		"network":       networkID,
+		"zt_interface":  ztInterface,
 		"cluster":       clusterModule != nil,
 		"client":        isClient,
 		"peers":         len(peers),
@@ -575,29 +588,34 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 		nodeID = clusterModule.GetLocalNode().ID
 	}
 
+	// POST - initiate or respond to call
 	if r.Method == "POST" {
 		var req struct {
-			To   string `json:"to"`
-			Type string `json:"type"`
+			To     string `json:"to"`
+			Type   string `json:"type"`
+			CallID string `json:"call_id"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 
-		// Initiate call to a peer
+		// Initiate call
 		if req.To != "" {
-			callID := generateID()
+			callID := req.CallID
+			if callID == "" {
+				callID = generateID()
+			}
 
-			// Get peer's info from registry
+			// Find target peer's IP
 			targetIP := ""
 			targetName := req.To
 
-			// Try to find peer by ID in registry
+			// Look in cluster registry
 			if clusterModule != nil {
 				if n, ok := clusterModule.GetNodeRegistry().Get(req.To); ok {
 					targetIP = n.ZeroTierIP
 					targetName = n.Name
 				}
 			}
-			// Also check local peers
+			// Look in local peers
 			peersMu.RLock()
 			if p, ok := peers[req.To]; ok {
 				targetIP = p.IP
@@ -605,7 +623,7 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 			}
 			peersMu.RUnlock()
 
-			// Store pending call
+			// Store call locally
 			callsMu.Lock()
 			pendingCalls[callID] = &PendingCall{
 				CallID:   callID,
@@ -617,17 +635,55 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 			}
 			callsMu.Unlock()
 
-			log.Printf("[CALL] %s (%s) -> %s (%s)", nodeName, nodeID, targetName, req.To)
+			log.Printf("[CALL] %s calling %s (call_id: %s, target_ip: %s)", nodeName, targetName, callID, targetIP)
 
-			// Send signal to peer if we have their IP
+			// Send call signal to peer if we have their IP (and it's not ourselves)
 			if targetIP != "" && targetIP != localIP {
 				go func() {
-					http.Post("http://"+targetIP+":8080/call/signal", "application/json",
-						strings.NewReader(`{"type":"CALL","call_id":"`+callID+`","from":"`+nodeID+`","from_name":"`+nodeName+`"}`))
+					payload := map[string]interface{}{
+						"type":      "CALL",
+						"call_id":   callID,
+						"from":      nodeID,
+						"from_name": nodeName,
+					}
+					data, _ := json.Marshal(payload)
+					http.Post("http://"+targetIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
 				}()
 			}
 
 			json.NewEncoder(w).Encode(map[string]string{"call_id": callID})
+			return
+		}
+
+		// Respond to call (accept/reject)
+		if req.CallID != "" && req.Type != "" {
+			callsMu.Lock()
+			if c, ok := pendingCalls[req.CallID]; ok {
+				c.Status = req.Type // "accepted" or "rejected"
+				log.Printf("[CALL %s] %s", req.Type, req.CallID)
+
+				// Notify the other party
+				go func() {
+					// Find caller's IP
+					callerIP := ""
+					peersMu.RLock()
+					if p, ok := peers[c.From]; ok {
+						callerIP = p.IP
+					}
+					peersMu.RUnlock()
+
+					if callerIP != "" && callerIP != localIP {
+						payload := map[string]interface{}{
+							"type":    req.Type,
+							"call_id": req.CallID,
+						}
+						data, _ := json.Marshal(payload)
+						http.Post("http://"+callerIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
+					}
+				}()
+			}
+			callsMu.Unlock()
+			json.NewEncoder(w).Encode(map[string]string{"status": req.Type})
 			return
 		}
 	}
@@ -635,12 +691,24 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 	// GET - check for pending incoming calls
 	callsMu.Lock()
 	var result []*PendingCall
+	now := time.Now()
 	for _, c := range pendingCalls {
+		// Show calls for this node that are pending or calling
 		if c.To == nodeID && (c.Status == "pending" || c.Status == "calling") {
-			result = append(result, c)
+			// Auto-timeout after 60 seconds
+			if now.Sub(c.Created) < 60*time.Second {
+				result = append(result, c)
+			}
+		}
+		// Also show outgoing calls that haven't been answered
+		if c.From == nodeID && c.Status == "calling" {
+			if now.Sub(c.Created) < 60*time.Second {
+				result = append(result, c)
+			}
 		}
 	}
 	callsMu.Unlock()
+
 	json.NewEncoder(w).Encode(result)
 }
 
@@ -659,9 +727,9 @@ func handleCallSignal(w http.ResponseWriter, r *http.Request) {
 		nodeID = clusterModule.GetLocalNode().ID
 	}
 
-	if sig.Type == "CALL" && nodeID != "" {
+	// Handle incoming call
+	if sig.Type == "CALL" && sig.CallID != "" {
 		callsMu.Lock()
-		// Check if call already exists
 		if _, exists := pendingCalls[sig.CallID]; !exists {
 			pendingCalls[sig.CallID] = &PendingCall{
 				CallID:   sig.CallID,
@@ -671,7 +739,17 @@ func handleCallSignal(w http.ResponseWriter, r *http.Request) {
 				Status:   "pending",
 				Created:  time.Now(),
 			}
-			log.Printf("[CALL INCOMING] %s (%s) -> %s", sig.FromName, sig.From, nodeID)
+			log.Printf("[CALL INCOMING] %s is calling (call_id: %s)", sig.FromName, sig.CallID)
+		}
+		callsMu.Unlock()
+	}
+
+	// Handle call response (accepted/rejected)
+	if (sig.Type == "accepted" || sig.Type == "rejected") && sig.CallID != "" {
+		callsMu.Lock()
+		if c, ok := pendingCalls[sig.CallID]; ok {
+			c.Status = sig.Type
+			log.Printf("[CALL %s] %s", sig.Type, sig.CallID)
 		}
 		callsMu.Unlock()
 	}
