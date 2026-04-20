@@ -5,22 +5,13 @@ echo "=== ZeroPhone Deployment Script ==="
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check for Docker
-if ! command -v docker &> /dev/null; then
-    echo "[*] Installing Docker..."
-    curl -fsSL https://get.docker.com | sh
-fi
-
-# Fix docker permissions
-if ! groups | grep -q docker; then
-    echo "[*] Adding user to docker group..."
-    sudo usermod -aG docker $USER
-    echo "[*] Please log out and back in, or run: newgrp docker"
-fi
-
 cd "$SCRIPT_DIR"
 
-# Build and start using docker compose v2
+# Stop existing containers
+echo "[*] Stopping existing containers..."
+docker compose down 2>/dev/null || true
+
+# Build and start
 echo "[*] Building and starting ZeroPhone..."
 docker compose up -d --build
 
