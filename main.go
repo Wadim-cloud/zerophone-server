@@ -165,6 +165,8 @@ var (
 	pendingCalls     = make(map[string]*PendingCall)
 	callsMu          sync.RWMutex
 	callStateMachine *CallStateMachine
+
+	useTLS bool
 )
 
 type PendingCall struct {
@@ -196,6 +198,27 @@ type Signal struct {
 	SDP    string `json:"sdp,omitempty"`
 	ICE    string `json:"ice,omitempty"`
 	Time   int64  `json:"time"`
+}
+
+func scheme() string {
+	if useTLS {
+		return "https://"
+	}
+	return "http://"
+}
+
+func getHTTPClient() *http.Client {
+	if useTLS {
+		return &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			},
+		}
+	}
+	return &http.Client{Timeout: 5 * time.Second}
 }
 
 func main() {
@@ -293,8 +316,11 @@ func main() {
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
 
-	// Use HTTPS if certs provided
-	if *certFile != "" && *keyFile != "" {
+	// Set global TLS mode
+	useTLS = (*certFile != "" && *keyFile != "")
+
+	// Start server
+	if useTLS {
 		server := &http.Server{
 			Addr:    bindAddr,
 			Handler: router,
@@ -381,7 +407,7 @@ func clientLoop() {
 		}
 
 		data, _ := json.Marshal(req)
-		resp, err := http.Post(serverAddr+"/register", "application/json", strings.NewReader(string(data)))
+		resp, err := getHTTPClient().Post(scheme()+serverAddr+"/register", "application/json", strings.NewReader(string(data)))
 		if err != nil {
 			log.Printf("Register failed: %v", err)
 			time.Sleep(10 * time.Second)
@@ -393,7 +419,7 @@ func clientLoop() {
 
 		// Heartbeat loop
 		for {
-			http.Get(serverAddr + "/heartbeat?node_id=" + req.ID)
+			getHTTPClient().Get(scheme() + serverAddr + "/heartbeat?node_id=" + req.ID)
 			time.Sleep(5 * time.Second)
 		}
 	}
@@ -425,9 +451,8 @@ func broadcastPresenceLoop() {
 			for _, ip := range ips {
 				if ip != localIP+":8080" {
 					go func(addr string) {
-						req, _ := http.NewRequest("GET", "http://"+addr+"/ping?node_id="+nodeName+"&ip="+localIP+"&network="+networkID, nil)
-						client := &http.Client{Timeout: 2 * time.Second}
-						client.Do(req)
+						req, _ := http.NewRequest("GET", scheme()+addr+"/ping?node_id="+nodeName+"&ip="+localIP+"&network="+networkID, nil)
+						getHTTPClient().Do(req)
 					}(ip)
 				}
 			}
@@ -439,9 +464,8 @@ func broadcastPresenceLoop() {
 			for _, n := range allNodes {
 				if n.ZeroTierIP != "" && n.ZeroTierIP != localIP {
 					go func(ip string) {
-						req, _ := http.NewRequest("GET", "http://"+ip+":8080/presence", nil)
-						client := &http.Client{Timeout: 2 * time.Second}
-						resp, err := client.Do(req)
+						req, _ := http.NewRequest("GET", scheme()+ip+":8080/presence", nil)
+						resp, err := getHTTPClient().Do(req)
 						if err == nil {
 							var nodes []*Peer
 							json.NewDecoder(resp.Body).Decode(&nodes)
@@ -538,7 +562,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		for _, ip := range targetIPs {
 			if ip != localIP {
 				go func(target string) {
-					client := &http.Client{Timeout: 3 * time.Second}
+					client := getHTTPClient()
 					// Notify peer of our name
 					data := map[string]interface{}{
 						"node_id": req.ID,
@@ -547,7 +571,7 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 						"network": req.NetworkID,
 					}
 					payload, _ := json.Marshal(data)
-					client.Post("http://"+target+":8080/presence", "application/json", bytes.NewReader(payload))
+					client.Post(scheme()+target+":8080/presence", "application/json", bytes.NewReader(payload))
 				}(ip)
 			}
 		}
@@ -836,7 +860,7 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 						"from_name": nodeName,
 					}
 					data, _ := json.Marshal(payload)
-					http.Post("http://"+targetIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
+					getHTTPClient().Post(scheme()+targetIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
 				}()
 			}
 
@@ -867,7 +891,7 @@ func handleCall(w http.ResponseWriter, r *http.Request) {
 							"call_id": req.CallID,
 						}
 						data, _ := json.Marshal(payload)
-						http.Post("http://"+callerIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
+						getHTTPClient().Post(scheme()+callerIP+":8080/call/signal", "application/json", strings.NewReader(string(data)))
 					}
 				}()
 			}
@@ -1002,7 +1026,7 @@ func handleSDPOffer(w http.ResponseWriter, r *http.Request) {
 
 		if targetIP != "" {
 			log.Printf("[SEND] Forwarding offer to %s (%s)", req.To, targetIP)
-			go http.Post("http://"+targetIP+":8080/sdp/receive", "application/json",
+			go getHTTPClient().Post(scheme()+targetIP+":8080/sdp/receive", "application/json",
 				strings.NewReader(`{"call_id":"`+req.CallID+`","sdp":"`+req.SDP+`","type":"offer"}`))
 		}
 	}
@@ -1062,7 +1086,7 @@ func handleICECandidate(w http.ResponseWriter, r *http.Request) {
 		peersMu.RUnlock()
 
 		if targetIP != "" {
-			go http.Post("http://"+targetIP+":8080/ice/receive", "application/json",
+			go getHTTPClient().Post(scheme()+targetIP+":8080/ice/receive", "application/json",
 				strings.NewReader(`{"call_id":"`+req.CallID+`","candidate":"`+req.Candidate+`"}`))
 		}
 	}
