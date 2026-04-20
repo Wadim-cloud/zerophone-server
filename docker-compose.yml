@@ -9,6 +9,7 @@ services:
       - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
       - ZEROPHONE_DATA=/data
       - ZEROPHONE_PEERS=${ZEROPHONE_PEERS:-}
+      - PUBLIC_IP=${PUBLIC_IP:-}
     volumes:
       - zerophone-data:/data
       - ./static:/app/static:ro
@@ -24,6 +25,7 @@ services:
       - ZEROPHONE_PORT=${ZEROPHONE_PORT:-8081}
       - ZEROPHONE_DATA=/data
       - ZEROPHONE_PEERS=127.0.0.1:5555
+      - PUBLIC_IP=${PUBLIC_IP:-}
     volumes:
       - zerophone-node-data:/data
     restart: unless-stopped
