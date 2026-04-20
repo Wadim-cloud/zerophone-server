@@ -280,7 +280,8 @@
 		}
 
 		// Codec selection
-		document.getElementById('codec-select').value = selectedCodec;
+		const codecSelect = document.getElementById('codec-select');
+		if (codecSelect) codecSelect.value = selectedCodec;
 		
 		function selectCodec(codec) {
 			selectedCodec = codec;
@@ -313,7 +314,8 @@
 				localStorage.setItem('zerophone_name', myName);
 			});
 			
-			document.getElementById('my-name').textContent = myName;
+			const myNameEl = document.getElementById('my-name');
+			if (myNameEl) myNameEl.textContent = myName;
 			
 			const nameInput = document.getElementById('name-input');
 			if (nameInput) nameInput.value = myName;
