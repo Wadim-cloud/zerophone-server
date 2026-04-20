@@ -19,22 +19,149 @@ import (
 	"zerophone/cluster"
 )
 
+// Call states - proper VoIP states
+const (
+	CallStateNull     = ""
+	CallStateInviting = "INVITING"
+	CallStateRinging  = "RINGING"
+	CallStateAccepted = "ACCEPTED"
+	CallStateReject   = "REJECTED"
+	CallStateBusy     = "BUSY"
+	CallStateEnded    = "ENDED"
+)
+
+// SIP-like messages
+const (
+	SIPInvite  = "INVITE"
+	SIPTrying  = "100 TRYING"
+	SIPRinging = "180 RINGING"
+	SIPOK      = "200 OK"
+	SIPACK     = "ACK"
+	SIPBYE     = "BYE"
+	SIPBusy    = "486 BUSY"
+)
+
+// CallStateMachine manages call states
+type CallStateMachine struct {
+	mu          sync.RWMutex
+	transitions map[string]map[string]string
+}
+
+func NewCallStateMachine() *CallStateMachine {
+	csm := &CallStateMachine{
+		transitions: make(map[string]map[string]string),
+	}
+	csm.transitions[CallStateNull] = map[string]string{
+		"INVITE": CallStateInviting,
+	}
+	csm.transitions[CallStateInviting] = map[string]string{
+		"100 TRYING":  CallStateInviting,
+		"180 RINGING": CallStateRinging,
+		"486 BUSY":    CallStateBusy,
+		"REJECT":      CallStateReject,
+		"200 OK":      CallStateAccepted,
+		"BYE":         CallStateEnded,
+	}
+	csm.transitions[CallStateRinging] = map[string]string{
+		"200 OK": CallStateAccepted,
+		"REJECT": CallStateReject,
+		"BYE":    CallStateEnded,
+	}
+	csm.transitions[CallStateAccepted] = map[string]string{
+		"BYE": CallStateEnded,
+	}
+	return csm
+}
+
+func (csm *CallStateMachine) canTransition(from, msg string) bool {
+	csm.mu.RLock()
+	defer csm.mu.RUnlock()
+	if transitions, ok := csm.transitions[from]; ok {
+		_, allowed := transitions[msg]
+		return allowed
+	}
+	return false
+}
+
+func (csm *CallStateMachine) nextState(from, msg string) string {
+	csm.mu.RLock()
+	defer csm.mu.RUnlock()
+	if transitions, ok := csm.transitions[from]; ok {
+		if next, allowed := transitions[msg]; allowed {
+			return next
+		}
+	}
+	return from
+}
+
+// SDP with codec negotiation
+type SDPExchange struct {
+	Codecs     []string `json:"codecs"`
+	Bitrate    int      `json:"bitrate"`
+	SampleRate int      `json:"sample_rate"`
+	Channels   int      `json:"channels"`
+	ptime      int      `json:"ptime"`
+	MaxPtime   int      `json:"max_ptime"`
+}
+
+var supportedCodecs = []string{"opus", "PCMU", "PCMA"}
+
+func negotiateCodecs(local, remote []string) string {
+	for _, rc := range remote {
+		for _, lc := range local {
+			if strings.EqualFold(rc, lc) {
+				return strings.ToLower(rc)
+			}
+		}
+	}
+	return "opus"
+}
+
+// ICE gathering timeout (10 seconds)
+const ICEGatheringTimeout = 10 * time.Second
+
+// TURN fallback
+var turnServers = []string{
+	"turn:turn.l.google.com:3478",
+	"turn:turn1.l.google.com:3478",
+	"turn:turn2.l.google.com:3478",
+}
+
+// ICEConfig for ICE servers
+type ICEConfig struct {
+	URLs       string `json:"urls"`
+	Username   string `json:"username,omitempty"`
+	Credential string `json:"credential,omitempty"`
+}
+
+func getICEServers() []ICEConfig {
+	return []ICEConfig{
+		{URLs: "stun:stun.l.google.com:19302"},
+		{URLs: "stun:stun1.l.google.com:19302"},
+		{URLs: "stun:stun2.l.google.com:19302"},
+		{URLs: "turn:turn.l.google.com:3478", Username: "guest", Credential: "somerealm"},
+		{URLs: "turn:turn1.l.google.com:3478", Username: "guest", Credential: "somerealm"},
+		{URLs: "turn:turn2.l.google.com:3478", Username: "guest", Credential: "somerealm"},
+	}
+}
+
 var (
 	addr       = flag.String("addr", ":8080", "http listen address")
 	serverURL  = flag.String("server", "", "server URL to connect to")
 	configPort = flag.Int("port", 8081, "cluster port")
 
-	clusterModule *cluster.ClusterModule
-	peers         = make(map[string]*Peer)
-	peersMu       sync.RWMutex
-	started       time.Time
-	nodeName      string
-	networkID     string
-	localIP       string
-	serverAddr    string
-	isClient      bool
-	pendingCalls  = make(map[string]*PendingCall)
-	callsMu       sync.RWMutex
+	clusterModule    *cluster.ClusterModule
+	peers            = make(map[string]*Peer)
+	peersMu          sync.RWMutex
+	started          time.Time
+	nodeName         string
+	networkID        string
+	localIP          string
+	serverAddr       string
+	isClient         bool
+	pendingCalls     = make(map[string]*PendingCall)
+	callsMu          sync.RWMutex
+	callStateMachine *CallStateMachine
 )
 
 type PendingCall struct {
@@ -70,6 +197,8 @@ type Signal struct {
 
 func main() {
 	flag.Parse()
+
+	callStateMachine = NewCallStateMachine()
 
 	nodeName = getNodeName()
 	localIP, networkID = detectZeroTier()
@@ -125,7 +254,10 @@ func main() {
 	router.HandleFunc("/call/end", handleCallEnd)
 	router.HandleFunc("/sdp/offer", handleSDPOffer)
 	router.HandleFunc("/sdp/answer", handleSDPAnswer)
+	router.HandleFunc("/sdp/receive", handleSDPReceive)
 	router.HandleFunc("/ice/candidate", handleICECandidate)
+	router.HandleFunc("/ice/receive", handleICEReceive)
+	router.HandleFunc("/ice/servers", handleICEServers)
 	router.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "static/debug.html")
 	})
@@ -821,18 +953,26 @@ func handleSDPOffer(w http.ResponseWriter, r *http.Request) {
 		SDP    string `json:"sdp"`
 		To     string `json:"to"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	log.Printf("[SDP OFFER] call_id: %s", req.CallID)
+	log.Printf("[SDP OFFER] call_id: %s from %s", req.CallID, req.To)
 
-	// Forward to target peer if known
+	// Find peer's IP and forward
 	if req.To != "" {
+		targetIP := ""
 		peersMu.RLock()
 		if p, ok := peers[req.To]; ok {
-			go http.Post("http://"+p.IP+":8080/sdp/receive", "application/json",
-				strings.NewReader(`{"call_id":"`+req.CallID+`","sdp":"`+req.SDP+`","type":"offer"}`))
+			targetIP = p.IP
 		}
 		peersMu.RUnlock()
+
+		if targetIP != "" && targetIP != localIP {
+			go http.Post("http://"+targetIP+":8080/sdp/receive", "application/json",
+				strings.NewReader(`{"call_id":"`+req.CallID+`","sdp":"`+req.SDP+`","type":"offer"}`))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -866,29 +1006,82 @@ func handleICECandidate(w http.ResponseWriter, r *http.Request) {
 		SDPMID        string `json:"sdpMid"`
 		SDPMLineIndex int    `json:"sdpMLineIndex"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-	// Forward candidate if we know the peer
+	// Forward to other party in call
 	callsMu.RLock()
+	var targetID string
 	if c, ok := pendingCalls[req.CallID]; ok {
-		targetID := c.To
-		if c.From == clusterModule.GetLocalNode().ID {
-			targetID = c.To
-		} else {
-			targetID = c.From
+		if c.From != "" {
+			if clusterModule != nil && clusterModule.GetLocalNode().ID == c.From {
+				targetID = c.To
+			} else {
+				targetID = c.From
+			}
 		}
-		callsMu.RUnlock()
+	}
+	callsMu.RUnlock()
 
+	if targetID != "" {
+		targetIP := ""
 		peersMu.RLock()
 		if p, ok := peers[targetID]; ok {
-			go http.Post("http://"+p.IP+":8080/ice/receive", "application/json",
-				strings.NewReader(`{"call_id":"`+req.CallID+`","candidate":"`+req.Candidate+`"}`))
+			targetIP = p.IP
 		}
 		peersMu.RUnlock()
-	} else {
-		callsMu.RUnlock()
+
+		if targetIP != "" && targetIP != localIP {
+			go http.Post("http://"+targetIP+":8080/ice/receive", "application/json",
+				strings.NewReader(`{"call_id":"`+req.CallID+`","candidate":"`+req.Candidate+`"}`))
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func handleSDPReceive(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CallID string `json:"call_id"`
+		SDP    string `json:"sdp"`
+		Type   string `json:"type"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	log.Printf("[SDP RECEIVE] type: %s, call_id: %s", req.Type, req.CallID)
+
+	callsMu.Lock()
+	if c, ok := pendingCalls[req.CallID]; ok {
+		log.Printf("[SDP] Stored for call: %s, from: %s, to: %s", req.CallID, c.From, c.To)
+	}
+	callsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func handleICEReceive(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CallID    string `json:"call_id"`
+		Candidate string `json:"candidate"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	log.Printf("[ICE RECEIVE] candidate for call: %s", req.CallID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func handleICEServers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	servers := getICEServers()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ice_servers":  servers,
+		"timeout_secs": 10,
+		"codecs":       supportedCodecs,
+	})
 }
