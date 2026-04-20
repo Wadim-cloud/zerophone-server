@@ -11,21 +11,15 @@ if ! command -v docker &> /dev/null; then
     curl -fsSL https://get.docker.com | sh
 fi
 
-# Check docker-compose
-if ! command -v docker-compose &> /dev/null; then
-    echo "[*] Installing docker-compose..."
-    sudo apt install -y docker-compose
-fi
-
 cd "$SCRIPT_DIR"
 
-# Build and start with docker-compose
+# Build and start with docker compose (v2, not docker-compose v1)
 echo "[*] Building and starting ZeroPhone..."
-docker-compose up -d --build
+docker compose up -d --build
 
 echo ""
 echo "=== ZeroPhone Deployed Successfully! ==="
 echo "Web UI: http://localhost:8080"
-echo "Status: docker-compose ps"
-echo "Logs:   docker-compose logs -f"
-echo "Stop:   docker-compose down"
+echo "Status: docker compose ps"
+echo "Logs:   docker compose logs -f"
+echo "Stop:   docker compose down"
