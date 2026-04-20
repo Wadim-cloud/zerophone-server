@@ -125,6 +125,9 @@ func main() {
 	router.HandleFunc("/sdp/offer", handleSDPOffer)
 	router.HandleFunc("/sdp/answer", handleSDPAnswer)
 	router.HandleFunc("/ice/candidate", handleICECandidate)
+	router.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "static/debug.html")
+	})
 
 	// Cluster routes
 	if clusterModule != nil {
