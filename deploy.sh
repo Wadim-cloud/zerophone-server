@@ -13,16 +13,12 @@ fi
 
 cd "$SCRIPT_DIR"
 
-# Fix docker-compose v1 Python issue
-echo "[*] Fixing docker-compose..."
-sudo pip install setuptools 2>/dev/null || true
-
-# Build and start
+# Build and start using docker compose v2
 echo "[*] Building and starting ZeroPhone..."
-docker-compose up -d --build
+docker compose up -d --build
 
 echo ""
 echo "=== ZeroPhone Deployed Successfully! ==="
 echo "Web UI: http://localhost:8080"
-echo "Status: docker-compose ps"
-echo "Logs:   docker-compose logs -f"
+echo "Status: docker compose ps"
+echo "Logs:   docker compose logs -f"
