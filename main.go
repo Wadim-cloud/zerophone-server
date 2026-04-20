@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -149,6 +150,8 @@ var (
 	addr       = flag.String("addr", ":8080", "http listen address")
 	serverURL  = flag.String("server", "", "server URL to connect to")
 	configPort = flag.Int("port", 8081, "cluster port")
+	certFile   = flag.String("cert", "", "TLS certificate file")
+	keyFile    = flag.String("key", "", "TLS key file")
 
 	clusterModule    *cluster.ClusterModule
 	peers            = make(map[string]*Peer)
@@ -262,6 +265,14 @@ func main() {
 		http.ServeFile(w, r, "static/debug.html")
 	})
 	router.HandleFunc("/stats", handleStats)
+	router.HandleFunc("/secure", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"secure": *certFile != "",
+			"tls":    r.TLS != nil,
+			"client": isClient,
+		})
+	})
 
 	// Cluster routes
 	if clusterModule != nil {
@@ -281,10 +292,31 @@ func main() {
 	}
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
-	if isClient {
-		log.Printf("Running as client - connect to %s", serverAddr)
+
+	if *certFile != "" && *keyFile != "" {
+		server := &http.Server{
+			Addr:    ":https",
+			Handler: router,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+		log.Printf("HTTPS enabled")
+
+		go func() {
+			http.ListenAndServe(":http", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+				http.Redirect(w, r, "https://"+r.Host+r.URL.String(), http.StatusMovedPermanently)
+			}))
+		}()
+
+		log.Fatal(server.ListenAndServeTLS(*certFile, *keyFile))
+	} else {
+		if isClient {
+			log.Printf("Running as client - connect to %s", serverAddr)
+		}
+		log.Fatal(http.ListenAndServe(bindAddr, router))
 	}
-	log.Fatal(http.ListenAndServe(bindAddr, router))
 }
 
 func getNodeName() string {
