@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -349,6 +350,10 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 		req.Name = nodeName
 	}
 
+	// Update local node name
+	nodeName = req.Name
+	networkID = req.NetworkID
+
 	peer := &Peer{
 		ID:        req.ID,
 		Name:      req.Name,
@@ -360,9 +365,38 @@ func handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	peersMu.Lock()
 	peers[req.ID] = peer
+
+	// Update cluster node name too
+	if clusterModule != nil {
+		clusterModule.GetLocalNode().Name = req.Name
+	}
 	peersMu.Unlock()
 
 	log.Printf("[REGISTER] %s as %s", req.ID, req.Name)
+
+	// Broadcast name update to ZeroTier peers
+	if localIP != "" {
+		targetIPs := []string{}
+		if strings.HasPrefix(localIP, "10.121.15.") {
+			targetIPs = []string{"10.121.15.208", "10.121.15.223"}
+		}
+		for _, ip := range targetIPs {
+			if ip != localIP {
+				go func(target string) {
+					client := &http.Client{Timeout: 3 * time.Second}
+					// Notify peer of our name
+					data := map[string]interface{}{
+						"node_id": req.ID,
+						"name":    req.Name,
+						"ip":      localIP,
+						"network": req.NetworkID,
+					}
+					payload, _ := json.Marshal(data)
+					client.Post("http://"+target+":8080/presence", "application/json", bytes.NewReader(payload))
+				}(ip)
+			}
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
