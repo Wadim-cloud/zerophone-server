@@ -178,7 +178,11 @@
 		let callSeconds = 0;
 		let peers = [];
 		let selectedCodec = localStorage.getItem('zerophone_codec') || 'opus';
-		
+		let packetsSent = 0;
+		let packetsRecv = 0;
+		let iceCandidatesGathered = 0;
+		let negotiatedCodec = '';
+
 		// Retry configuration
 		const MAX_RETRIES = 5;
 		const INITIAL_BACKOFF_MS = 1000;
@@ -612,9 +616,15 @@
 			}
 			
 			peerConnection.ontrack = (event) => {
+				packetsRecv += event.reports.length;
+				log('RECV #' + packetsRecv + ': ' + event.streams[0].id);
 				const stream = event.streams[0];
-				log('Receiving audio from: ' + stream.id);
-				
+
+				const track = stream.getAudioTracks()[0];
+				if (track) {
+					negotiatedCodec = track.label;
+				}
+
 				let audioEl = document.getElementById('remote-audio');
 				if (!audioEl) {
 					audioEl = document.createElement('audio');
@@ -628,7 +638,8 @@
 			
 			peerConnection.onicecandidate = (event) => {
 				if (event.candidate) {
-					log('ICE: New candidate: ' + event.candidate.candidate.substring(0, 50) + '...');
+					iceCandidatesGathered++;
+					log('ICE #' + iceCandidatesGathered + ': ' + event.candidate.candidate.substring(0, 50));
 					sendICE({
 						call_id: callId,
 						candidate: event.candidate.candidate,
@@ -722,6 +733,8 @@
 			});
 			
 			await pc.setLocalDescription(offer);
+
+			packetsSent++;
 			
 			await fetch(SERVER + '/sdp/offer', {
 				method: 'POST',
@@ -925,19 +938,48 @@
 			if (dw) dw.textContent = peerConnection ? peerConnection.connectionState : 'none';
 			if (di) di.textContent = peerConnection ? peerConnection.iceConnectionState : 'none';
 			if (dco) dco.textContent = selectedCodec;
+
+			const dsen = document.getElementById('debug-sent');
+			const drec = document.getElementById('debug-recv');
+			const dice = document.getElementById('debug-icecount');
+			if (dsen) dsen.textContent = packetsSent;
+			if (drec) drec.textContent = packetsRecv;
+			if (dice) dice.textContent = iceCandidatesGathered;
 		}
+
+		async function updateStats() {
+			try {
+				const r = await fetch(SERVER + '/stats');
+				const s = await r.json();
+				document.getElementById('debug-calls').textContent = s.active_calls;
+				document.getElementById('debug-peers').textContent = s.peer_count;
+			} catch(e) {}
+		}
+
+		setInterval(updateStats, 1000);
 		setInterval(updateDebug, 1000);
+
+		setInterval(() => {
+			if (callState === 'active') {
+				log('STATS: sent=' + packetsSent + ' recv=' + packetsRecv + ' ice=' + iceCandidatesGathered + ' codec=' + negotiatedCodec);
+			}
+		}, 2000);
 	</script>
 	
 	<div class="card debug-panel" style="margin-top: 20px;">
 		<h3>Debug</h3>
 		<div style="color: var(--muted);">
+			<div>Calls: <span id="debug-calls">0</span></div>
+			<div>Peers: <span id="debug-peers">0</span></div>
 			<div>State: <span id="debug-state">idle</span></div>
 			<div>CallID: <span id="debug-callid">-</span></div>
 			<div>Peer: <span id="debug-peer">-</span></div>
 			<div>WebRTC: <span id="debug-webrtc">-</span></div>
 			<div>ICE: <span id="debug-ice">-</span></div>
 			<div>Codec: <span id="debug-codec">-</span></div>
+			<div>Packets Sent: <span id="debug-sent">0</span></div>
+			<div>Packets Recv: <span id="debug-recv">0</span></div>
+			<div>ICE Candidates: <span id="debug-icecount">0</span></div>
 		</div>
 	</div>
 </body>

@@ -261,6 +261,7 @@ func main() {
 	router.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "static/debug.html")
 	})
+	router.HandleFunc("/stats", handleStats)
 
 	// Cluster routes
 	if clusterModule != nil {
@@ -953,14 +954,22 @@ func handleSDPOffer(w http.ResponseWriter, r *http.Request) {
 		SDP    string `json:"sdp"`
 		To     string `json:"to"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+	json.NewDecoder(r.Body).Decode(&req)
+
+	log.Printf("[SDP] OFFER from %s | call_id: %s | sdp_len: %d", req.To, req.CallID, len(req.SDP))
+
+	var sdp struct {
+		Type string `json:"type"`
+		PT   []struct {
+			MimeType  string `json:"mimeType"`
+			ClockRate int    `json:"clockRate"`
+		} `json:"media"`
+	}
+	json.Unmarshal([]byte(req.SDP), &sdp)
+	for _, m := range sdp.PT {
+		log.Printf("[CODEC] %s @ %dHz", m.MimeType, m.ClockRate)
 	}
 
-	log.Printf("[SDP OFFER] call_id: %s from %s", req.CallID, req.To)
-
-	// Find peer's IP and forward
 	if req.To != "" {
 		targetIP := ""
 		peersMu.RLock()
@@ -969,7 +978,8 @@ func handleSDPOffer(w http.ResponseWriter, r *http.Request) {
 		}
 		peersMu.RUnlock()
 
-		if targetIP != "" && targetIP != localIP {
+		if targetIP != "" {
+			log.Printf("[SEND] Forwarding offer to %s (%s)", req.To, targetIP)
 			go http.Post("http://"+targetIP+":8080/sdp/receive", "application/json",
 				strings.NewReader(`{"call_id":"`+req.CallID+`","sdp":"`+req.SDP+`","type":"offer"}`))
 		}
@@ -1001,17 +1011,13 @@ func handleSDPAnswer(w http.ResponseWriter, r *http.Request) {
 
 func handleICECandidate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		CallID        string `json:"call_id"`
-		Candidate     string `json:"candidate"`
-		SDPMID        string `json:"sdpMid"`
-		SDPMLineIndex int    `json:"sdpMLineIndex"`
+		CallID    string `json:"call_id"`
+		Candidate string `json:"candidate"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
+	json.NewDecoder(r.Body).Decode(&req)
 
-	// Forward to other party in call
+	log.Printf("[ICE]Candidate for %s: %s", req.CallID, req.Candidate[:min(50, len(req.Candidate))])
+
 	callsMu.RLock()
 	var targetID string
 	if c, ok := pendingCalls[req.CallID]; ok {
@@ -1033,7 +1039,7 @@ func handleICECandidate(w http.ResponseWriter, r *http.Request) {
 		}
 		peersMu.RUnlock()
 
-		if targetIP != "" && targetIP != localIP {
+		if targetIP != "" {
 			go http.Post("http://"+targetIP+":8080/ice/receive", "application/json",
 				strings.NewReader(`{"call_id":"`+req.CallID+`","candidate":"`+req.Candidate+`"}`))
 		}
@@ -1084,4 +1090,24 @@ func handleICEServers(w http.ResponseWriter, r *http.Request) {
 		"timeout_secs": 10,
 		"codecs":       supportedCodecs,
 	})
+}
+
+func handleStats(w http.ResponseWriter, r *http.Request) {
+	callsMu.RLock()
+	activeCalls := len(pendingCalls)
+	callsMu.RUnlock()
+
+	peersMu.RLock()
+	peerCount := len(peers)
+	peersMu.RUnlock()
+
+	stats := map[string]interface{}{
+		"active_calls": activeCalls,
+		"peer_count":   peerCount,
+		"local_ip":     localIP,
+		"network":      networkID,
+		"uptime":       time.Since(started).String(),
+	}
+
+	json.NewEncoder(w).Encode(stats)
 }
