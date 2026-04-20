@@ -355,8 +355,35 @@ func handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 func handleNodes(w http.ResponseWriter, r *http.Request) {
 	networkID := r.URL.Query().Get("network_id")
 
-	peersMu.RLock()
 	var result []*Peer
+
+	// First, get cluster nodes from ZeroMQ cluster
+	if clusterModule != nil {
+		clusterNodes := clusterModule.GetNodeRegistry().GetAll()
+		for _, n := range clusterNodes {
+			if networkID == "" || n.NetworkID == networkID {
+				peer := &Peer{
+					ID:        n.ID,
+					Name:      n.Name,
+					NetworkID: n.NetworkID,
+					Status:    n.Status,
+					LastSeen:  n.LastSeen,
+					IP:        n.ZeroTierIP,
+				}
+				if peer.Status == "" {
+					if time.Now().Unix()-peer.LastSeen > 60 {
+						peer.Status = "offline"
+					} else {
+						peer.Status = "online"
+					}
+				}
+				result = append(result, peer)
+			}
+		}
+	}
+
+	// Also include HTTP-registered peers
+	peersMu.RLock()
 	for _, p := range peers {
 		if networkID == "" || p.NetworkID == networkID {
 			if time.Now().Unix()-p.LastSeen > 60 {
@@ -385,6 +412,7 @@ func handleSignal(w http.ResponseWriter, r *http.Request) {
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
 	peersMu.RLock()
 	online := 0
 	for _, p := range peers {
@@ -393,17 +421,27 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	peersMu.RUnlock()
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"version":   "1.0.0",
-		"node_name": nodeName,
-		"uptime":    time.Since(started).String(),
-		"ip":        localIP,
-		"network":   networkID,
-		"cluster":   clusterModule != nil,
-		"client":    isClient,
-		"peers":     len(peers),
-		"online":    online,
-	})
+
+	status := map[string]interface{}{
+		"version":       "1.0.0",
+		"node_name":     nodeName,
+		"node_id":       "",
+		"uptime":        time.Since(started).String(),
+		"ip":            localIP,
+		"network":       networkID,
+		"cluster":       clusterModule != nil,
+		"client":        isClient,
+		"peers":         len(peers),
+		"online":        online,
+		"cluster_nodes": 0,
+	}
+
+	if clusterModule != nil {
+		status["node_id"] = clusterModule.GetLocalNode().ID
+		status["cluster_nodes"] = len(clusterModule.GetNodeRegistry().GetAll())
+	}
+
+	json.NewEncoder(w).Encode(status)
 }
 
 func handlePing(w http.ResponseWriter, r *http.Request) {
