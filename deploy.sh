@@ -1,54 +1,38 @@
 #!/bin/bash
 set -e
 
-echo "=== ZeroPhone Deployment Script ==="
+echo "=== ZeroPhone Deployment Script (Docker) ==="
 
-# Get current directory (where this script is)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Install dependencies
-echo "[*] Installing dependencies..."
-sudo apt install -y gcc musl-dev pkg-config libzmq3-dev curl 2>/dev/null || true
+# Check for Docker
+if ! command -v docker &> /dev/null; then
+    echo "[*] Installing Docker..."
+    curl -fsSL https://get.docker.com | sh
+    sudo usermod -aG docker $USER
+fi
 
-# Build zerophone (always rebuild)
-echo "[*] Building zerophone..."
 cd "$SCRIPT_DIR"
-rm -f zerophone
-CGO_ENABLED=1 go build -o zerophone .
 
-# Create data directory
-echo "[*] Creating data directory..."
-sudo mkdir -p /var/lib/zerophone
+# Build Docker image
+echo "[*] Building Docker image..."
+docker build -t zerophone:latest .
 
-# Create systemd service
-echo "[*] Installing systemd service..."
-sudo tee /etc/systemd/system/zerophone.service > /dev/null << EOF
-[Unit]
-Description=ZeroPhone VoIP Server
-After=network.target
+# Stop existing container if running
+docker stop zerophone 2>/dev/null || true
+docker rm zerophone 2>/dev/null || true
 
-[Service]
-Type=simple
-WorkingDirectory=/var/lib/zerophone
-ExecStart=${SCRIPT_DIR}/zerophone --addr :8080
-Restart=always
-Environment=ZEROPHONE_CLUSTER=1
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-# Stop if running
-sudo systemctl stop zerophone 2>/dev/null || true
-
-# Reload systemd and start
-echo "[*] Starting service..."
-sudo systemctl daemon-reload
-sudo systemctl enable zerophone
-sudo systemctl restart zerophone
+# Run container
+echo "[*] Starting ZeroPhone container..."
+docker run -d \
+    --name zerophone \
+    --network host \
+    -e ZEROPHONE_CLUSTER=1 \
+    -v zerophone-data:/data \
+    zerophone:latest
 
 echo ""
 echo "=== ZeroPhone Deployed Successfully! ==="
 echo "Web UI: http://localhost:8080"
-echo "Status: sudo systemctl status zerophone"
-echo "Logs:   sudo journalctl -u zerophone -f"
+echo "Status: docker ps"
+echo "Logs:   docker logs zerophone"
