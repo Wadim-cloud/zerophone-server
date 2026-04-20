@@ -1,9 +1,11 @@
-# Build stage
+# ZeroPhone Dockerfile
+# Build: docker build -t zerophone .
+# Run:   docker run -p 8080:8080 -p 5555:5555 -p 5556:5556 -p 5557:5557 -p 5558:5558 zerophone
+
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies including ZeroMQ
 RUN apk add --no-cache gcc musl-dev libzmq-dev
 
 COPY go.mod go.sum ./
@@ -12,20 +14,20 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=1 GOOS=linux go build -o zerophone .
 
-# Final stage
 FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates sqlite libzmq
 
-WORKDIR /app/
+WORKDIR /app
 
 COPY --from=builder /app/zerophone .
 COPY --from=builder /app/static ./static
+COPY --from=builder /app/cluster ./cluster
+COPY --from=builder /app/cluster_lib ./cluster_lib
+COPY --from=builder /app/main.go ./
 
-# Expose HTTP and ZeroMQ ports
-EXOSE 8080 5555 5556 5557 5558
+EXPOSE 8080 5555 5556 5557 5558
 
-ENV ZEROPHONE_CLUSTER=1 \
-    ZEROPHONE_PORT=8081
+ENV ZEROPHONE_CLUSTER=1
 
 CMD ["./zerophone", "--addr", ":8080"]
