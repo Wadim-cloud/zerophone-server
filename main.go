@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -149,6 +150,8 @@ var (
 	addr       = flag.String("addr", ":8080", "http listen address")
 	serverURL  = flag.String("server", "", "server URL to connect to")
 	configPort = flag.Int("port", 8081, "cluster port")
+	certFile   = flag.String("cert", "", "TLS certificate file")
+	keyFile    = flag.String("key", "", "TLS key file")
 
 	clusterModule    *cluster.ClusterModule
 	peers            = make(map[string]*Peer)
@@ -289,7 +292,21 @@ func main() {
 	}
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
-	log.Fatal(http.ListenAndServe(bindAddr, router))
+
+	// Use HTTPS if certs provided
+	if *certFile != "" && *keyFile != "" {
+		server := &http.Server{
+			Addr:    bindAddr,
+			Handler: router,
+			TLSConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		}
+		log.Printf("HTTPS enabled with %s", *certFile)
+		log.Fatal(server.ListenAndServeTLS(*certFile, *keyFile))
+	} else {
+		log.Fatal(http.ListenAndServe(bindAddr, router))
+	}
 }
 
 func getNodeName() string {
