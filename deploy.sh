@@ -3,10 +3,9 @@ set -e
 
 echo "=== ZeroPhone Deployment Script ==="
 
-# Install dependencies FIRST
+# Install dependencies (skip update to avoid kernel header errors)
 echo "[*] Installing dependencies..."
-sudo apt update
-sudo apt install -y gcc musl-dev pkg-config libzmq3-dev
+sudo apt install -y gcc musl-dev pkg-config libzmq3-dev curl 2>/dev/null || true
 
 # Build zerophone
 echo "[*] Building zerophone..."
