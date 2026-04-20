@@ -10,9 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "[*] Installing dependencies..."
 sudo apt install -y gcc musl-dev pkg-config libzmq3-dev curl 2>/dev/null || true
 
-# Build zerophone
+# Build zerophone (always rebuild)
 echo "[*] Building zerophone..."
 cd "$SCRIPT_DIR"
+rm -f zerophone
 CGO_ENABLED=1 go build -o zerophone .
 
 # Create data directory
