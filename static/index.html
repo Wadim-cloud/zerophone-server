@@ -89,8 +89,27 @@
 			       onchange="updateName(this.value)">
 		</header>
 		
-		<!-- Idle Screen -->
-		<div id="idle-screen">
+<!-- Welcome/Permission Screen -->
+	<div id="welcome-screen">
+		<div class="card">
+			<h2>ZeroPhone</h2>
+			<p style="color: var(--muted);">Voice Calling over ZeroTier</p>
+			
+			<input type="text" id="name-input-welcome" placeholder="Your name"
+			       style="background: var(--card); border: 1px solid var(--border);
+			              color: var(--text); padding: 12px; border-radius: 8px;
+			              width: 100%; margin: 16px 0;">
+			
+			<button class="btn" onclick="initWithPermission()">Start</button>
+			
+			<p style="color: var(--muted); font-size: 0.75rem; margin-top: 16px;">
+				Microphone permission will be requested when you click Start
+			</p>
+		</div>
+	</div>
+	
+	<!-- Idle Screen -->
+	<div id="idle-screen" style="display:none;">
 			<div class="card">
 				<h3>Contacts</h3>
 				<div id="peer-list">
@@ -117,7 +136,7 @@
 		</div>
 		
 		<!-- Incoming Call -->
-		<div id="incoming-screen" class="call-screen">
+		<div id="incoming-screen" class="call-screen" style="display:none;">
 			<h2>Incoming Call</h2>
 			<div class="call-timer" id="incoming-caller">-</div>
 			<p>is calling you...</p>
@@ -126,7 +145,7 @@
 		</div>
 		
 		<!-- Outgoing Call -->
-		<div id="outgoing-screen" class="call-screen">
+		<div id="outgoing-screen" class="call-screen" style="display:none;">
 			<h2>Calling...</h2>
 			<div class="call-timer" id="outgoing-callee">-</div>
 			<div class="waveform">
@@ -137,7 +156,7 @@
 		</div>
 		
 		<!-- Active Call -->
-		<div id="active-screen" class="call-screen">
+		<div id="active-screen" class="call-screen" style="display:none;">
 			<h2>In Call</h2>
 			<div class="call-timer" id="call-peer">-</div>
 			<div class="waveform">
@@ -267,11 +286,14 @@
 
 		// Initialize
 		async function init() {
+			log('Requesting microphone permission...');
+			
 			myName = localStorage.getItem('zerophone_name');
 			myId = localStorage.getItem('zerophone_id');
 			
 			if (!myName) {
-				myName = prompt('Enter your name:') || 'phone-' + Math.random().toString(36).substr(2,6);
+				const entered = prompt('Enter your name:');
+				myName = entered || 'phone-' + Math.random().toString(36).substr(2,6);
 			}
 			
 			await fetch(SERVER + '/register', {
@@ -287,13 +309,40 @@
 				localStorage.setItem('zerophone_name', myName);
 			});
 			
-			const myNameEl = document.getElementById('my-name');
-			if (myNameEl) myNameEl.textContent = myName;
+			document.getElementById('my-name').textContent = myName;
+			
+			const nameInput = document.getElementById('name-input');
+			if (nameInput) nameInput.value = myName;
+			
+			try {
+				log('Getting microphone...');
+				const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+				localStream = stream;
+				log('Microphone granted: ' + stream.getAudioTracks()[0].label);
+			} catch(e) {
+				log('Mic permission needed: ' + e.message, 'error');
+				log('Click "Allow" when prompted', 'error');
+				
+				const allowBtn = document.createElement('button');
+				allowBtn.className = 'btn';
+				allowBtn.textContent = 'Allow Microphone';
+				allowBtn.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:9999;';
+				allowBtn.onclick = async () => {
+					try {
+						const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+						localStream = stream;
+						log('Microphone connected', 'success');
+						allowBtn.remove();
+					} catch(e2) {
+						log('Still blocked: ' + e2.message, 'error');
+					}
+				};
+				document.body.appendChild(allowBtn);
+			}
+			
 			log('Registered as ' + myName);
 			refreshContacts();
 			pollCalls();
-			const nameInput = document.getElementById('name-input');
-			if (nameInput) nameInput.value = myName;
 		}
 
 		async function updateName(newName) {
@@ -828,11 +877,22 @@
 			}, 1000);
 		}
 		
-		function showScreen(id) {
-			['idle-screen', 'incoming-screen', 'outgoing-screen', 'active-screen'].forEach(s => {
-				document.getElementById(s).classList.remove('active');
-			});
-			document.getElementById(id).classList.add('active');
+		function showScreen(screen) {
+			document.querySelectorAll('.container > div').forEach(d => d.style.display = 'none');
+			const el = document.getElementById(screen);
+			if (el) el.style.display = 'block';
+		}
+		
+		async function initWithPermission() {
+			const nameInput = document.getElementById('name-input-welcome');
+			if (nameInput && nameInput.value) {
+				myName = nameInput.value;
+				localStorage.setItem('zerophone_name', myName);
+			}
+			
+			await init();
+			
+			showScreen('idle-screen');
 		}
 		
 		function log(msg, type = 'info') {
@@ -847,7 +907,7 @@
 		
 		document.addEventListener('DOMContentLoaded', async () => {
 			log('ZeroPhone ready');
-			await init();
+			showScreen('welcome-screen');
 		});
 		setInterval(refreshContacts, 10000);
 
