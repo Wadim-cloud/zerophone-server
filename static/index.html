@@ -75,7 +75,10 @@
 	<div class="container">
 		<header>
 			<h1>ZeroPhone</h1>
-			<div style="color: var(--muted)" id="my-name">-</div>
+			<input type="text" id="name-input" placeholder="Your name" 
+			       style="background: var(--card); border: 1px solid var(--border); 
+			              color: var(--text); padding: 8px; border-radius: 6px;"
+			       onchange="updateName(this.value)">
 		</header>
 		
 		<!-- Idle Screen -->
@@ -141,23 +144,48 @@
 		
 		// Initialize
 		async function init() {
-			// Register if not
-			if (!myId) {
-				await fetch(SERVER + '/register', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({name: myName || 'phone-' + Math.random().toString(36).substr(2,6)})
-				}).then(r => r.json()).then(d => {
-					myId = d.id;
-					myName = d.name;
-					localStorage.setItem('zerophone_id', myId);
-					localStorage.setItem('zerophone_name', myName);
-				});
+			// Load saved name or prompt for new one
+			myName = localStorage.getItem('zerophone_name');
+			myId = localStorage.getItem('zerophone_id');
+			
+			if (!myName) {
+				myName = prompt('Enter your name:') || 'phone-' + Math.random().toString(36).substr(2,6);
 			}
+			
+			// Register
+			await fetch(SERVER + '/register', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					name: myName,
+					network_id: 'flgubtoy'
+				})
+			}).then(r => r.json()).then(d => {
+				myId = d.id;
+				localStorage.setItem('zerophone_id', myId);
+				localStorage.setItem('zerophone_name', myName);
+			});
+			
 			document.getElementById('my-name').textContent = myName;
 			log('Registered as ' + myName);
 			refreshContacts();
 			pollCalls();
+			document.getElementById('name-input').value = myName;
+		}
+
+		async function updateName(newName) {
+			if (!newName) return;
+			myName = newName;
+			localStorage.setItem('zerophone_name', myName);
+			await fetch(SERVER + '/register', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					name: myName,
+					network_id: 'flgubtoy'
+				})
+			});
+			log('Name updated to: ' + myName);
 		}
 		
 		// Refresh contacts
