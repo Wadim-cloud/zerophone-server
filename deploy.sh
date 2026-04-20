@@ -3,16 +3,14 @@ set -e
 
 echo "=== ZeroPhone Deployment Script ==="
 
-# Check if zerophone binary exists
-if [ ! -f "./zerophone" ]; then
-    echo "[*] Building zerophone..."
-    CGO_ENABLED=1 go build -o zerophone .
-fi
-
-# Install dependencies
+# Install dependencies FIRST
 echo "[*] Installing dependencies..."
 sudo apt update
-sudo apt install -y golang-go libzmq3-dev curl || true
+sudo apt install -y gcc musl-dev pkg-config libzmq3-dev
+
+# Build zerophone
+echo "[*] Building zerophone..."
+CGO_ENABLED=1 go build -o zerophone .
 
 # Create data directory
 echo "[*] Creating data directory..."
