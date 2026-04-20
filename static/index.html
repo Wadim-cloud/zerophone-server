@@ -69,6 +69,8 @@
 		.log-entry.sent { color: var(--accent); }
 		.log-entry.recv { color: var(--success); }
 		.log-entry.error { color: var(--danger); }
+		.debug-panel { font-size: 0.75rem; }
+		.debug-panel span { color: var(--accent); }
 	</style>
 </head>
 <body>
@@ -251,11 +253,13 @@
 				localStorage.setItem('zerophone_name', myName);
 			});
 			
-			document.getElementById('my-name').textContent = myName;
+			const myNameEl = document.getElementById('my-name');
+			if (myNameEl) myNameEl.textContent = myName;
 			log('Registered as ' + myName);
 			refreshContacts();
 			pollCalls();
-			document.getElementById('name-input').value = myName;
+			const nameInput = document.getElementById('name-input');
+			if (nameInput) nameInput.value = myName;
 		}
 
 		async function updateName(newName) {
@@ -309,19 +313,27 @@
 						headers: {'Content-Type': 'application/json'}
 					});
 					const calls = await r.json();
+					
+					if (calls.length > 0) {
+						log('Poll: ' + calls.length + ' pending call(s)');
+					}
+					
 					for (const call of calls) {
+						log('Call check: ' + call.call_id + ' status=' + call.status + ' from=' + call.from_name);
+						
 						if (call.status === 'pending' && callState === 'idle') {
-							// Incoming call!
 							playSound('ring');
 							callId = call.call_id;
 							callPeer = call.from;
 							callState = 'ringing';
 							document.getElementById('incoming-caller').textContent = call.from_name || call.from;
-							log('Incoming call from ' + (call.from_name || call.from), 'recv');
+							log('INCOMING CALL from ' + (call.from_name || call.from), 'recv');
 							showScreen('incoming-screen');
 						}
 					}
-				} catch(e) {}
+				} catch(e) {
+					// Silent fail
+				}
 			}, 2000);
 		}
 		
@@ -395,9 +407,14 @@
 			document.getElementById(id).classList.add('active');
 		}
 		
-		function log(msg, type = '') {
-			const el = document.getElementById('log');
-			el.innerHTML = `<div class="log-entry ${type}">${new Date().toLocaleTimeString()} ${msg}</div>` + el.innerHTML;
+		function log(msg, type = 'info') {
+			const logEl = document.getElementById('log');
+			if (!logEl) return;
+			const entry = document.createElement('div');
+			entry.className = 'log-entry ' + type;
+			entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+			logEl.insertBefore(entry, logEl.firstChild);
+			if (logEl.children.length > 50) logEl.lastChild.remove();
 		}
 		
 		// WebRTC for audio calls - Best Practices
@@ -480,7 +497,7 @@ async function startPeerConnection() {
     // Connection state
     peerConnection.onconnectionstatechange = () => {
         const state = peerConnection.connectionState;
-        log('WebRTC: ' + state);
+        log('WebRTC state: ' + state, 'info');
         
         switch(state) {
             case 'connected':
@@ -501,7 +518,7 @@ async function startPeerConnection() {
     
     // ICE connection state
     peerConnection.oniceconnectionstatechange = () => {
-        log('ICE: ' + peerConnection.iceConnectionState);
+        log('ICE state: ' + peerConnection.iceConnectionState);
     };
     
     return peerConnection;
@@ -567,44 +584,72 @@ async function handleAnswer(sdp) {
 // Update startCall
 async function startCall(peerId) {
     if (callState !== 'idle') return;
+    
+    const peer = peers.find(p => p.id === peerId);
+    log('START CALL: ' + peerId + ' (' + (peer?.name || 'unknown') + ') IP=' + (peer?.ip || 'none'));
+    
     callPeer = peerId;
     callId = Math.random().toString(36).substr(2, 9);
     callState = 'calling';
     playSound('dial');
     showScreen('outgoing-screen');
-    document.getElementById('outgoing-callee').textContent = peers.find(p => p.id === peerId)?.name || peerId;
-    log('Calling ' + peerId + '...');
+    
+    const displayName = peer?.name || peerId;
+    document.getElementById('outgoing-callee').textContent = displayName;
+    log('Dialing ' + displayName + ' (call_id: ' + callId + ')');
     
     try {
-        // Ensure we have audio
+        // Get audio first
+        log('Getting microphone...');
         await initAudio();
         
-        // Create WebRTC offer
+        // Create offer
+        log('Creating WebRTC offer...');
         await createAndSendOffer();
+        log('WebRTC offer sent');
         
-        // Also notify via HTTP
-        await fetch(SERVER + '/call', {
+        // Call via HTTP
+        log('Sending call via HTTP...');
+        const r = await fetch(SERVER + '/call', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({to: peerId, call_id: callId})
+            body: JSON.stringify({to: peerId})
         });
+        const data = await r.json();
+        log('HTTP response: ' + JSON.stringify(data));
+        
+        if (data.call_id) {
+            callId = data.call_id;
+            log('Call initiated: ' + callId);
+        }
     } catch(e) {
-        log('Call failed: ' + e.message, 'error');
+        log('Call FAILED: ' + e.message, 'error');
+        console.error(e);
         endCall();
     }
 }
 
 // Update answerCall
 async function answerCall() {
+    log('ANSWER CALL: ' + callId + ' from=' + callPeer);
+    
     if (peerConnection) {
+        log('Closing existing peerConnection');
         peerConnection.close();
         peerConnection = null;
     }
     
+    log('Getting microphone...');
+    await initAudio();
+    
+    log('Creating answer...');
+    await createAndSendOffer();
+    log('WebRTC answer sent');
+    
     callState = 'active';
     showScreen('active-screen');
     document.getElementById('call-peer').textContent = document.getElementById('incoming-caller').textContent;
-    log('Answering call...');
+    log('Call answered, connecting...', 'sent');
     playSound('connect');
     startTimer();
     
@@ -649,6 +694,29 @@ async function endCall() {
 		// Start
 		init();
 		setInterval(refreshContacts, 10000);
+
+		// Debug display
+		function updateDebug() {
+			const ds = document.getElementById('debug-state');
+			const dc = document.getElementById('debug-callid');
+			const dp = document.getElementById('debug-peer');
+			const dw = document.getElementById('debug-webrtc');
+			if (ds) ds.textContent = callState;
+			if (dc) dc.textContent = callId || '-';
+			if (dp) dp.textContent = callPeer || '-';
+			if (dw) dw.textContent = peerConnection ? peerConnection.connectionState : 'none';
+		}
+		setInterval(updateDebug, 1000);
 	</script>
+	
+	<div class="card debug-panel" style="margin-top: 20px;">
+		<h3>Debug</h3>
+		<div style="color: var(--muted);">
+			<div>State: <span id="debug-state">idle</span></div>
+			<div>CallID: <span id="debug-callid">-</span></div>
+			<div>Peer: <span id="debug-peer">-</span></div>
+			<div>WebRTC: <span id="debug-webrtc">-</span></div>
+		</div>
+	</div>
 </body>
 </html>
