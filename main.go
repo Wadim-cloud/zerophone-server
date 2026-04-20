@@ -34,7 +34,7 @@ var (
 	serverAddr    string
 	isClient      bool
 	pendingCalls  = make(map[string]*PendingCall)
-	callsMu       sync.Mutex
+	callsMu       sync.RWMutex
 )
 
 type PendingCall struct {
@@ -816,16 +816,79 @@ func handleCallEnd(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleSDPOffer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CallID string `json:"call_id"`
+		SDP    string `json:"sdp"`
+		To     string `json:"to"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	log.Printf("[SDP OFFER] call_id: %s", req.CallID)
+
+	// Forward to target peer if known
+	if req.To != "" {
+		peersMu.RLock()
+		if p, ok := peers[req.To]; ok {
+			go http.Post("http://"+p.IP+":8080/sdp/receive", "application/json",
+				strings.NewReader(`{"call_id":"`+req.CallID+`","sdp":"`+req.SDP+`","type":"offer"}`))
+		}
+		peersMu.RUnlock()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func handleSDPAnswer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CallID string `json:"call_id"`
+		SDP    string `json:"sdp"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	log.Printf("[SDP ANSWER] call_id: %s", req.CallID)
+
+	// Store answer for polling
+	callsMu.Lock()
+	if c, ok := pendingCalls[req.CallID]; ok {
+		c.Status = "accepted"
+	}
+	callsMu.Unlock()
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
 func handleICECandidate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CallID        string `json:"call_id"`
+		Candidate     string `json:"candidate"`
+		SDPMID        string `json:"sdpMid"`
+		SDPMLineIndex int    `json:"sdpMLineIndex"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	// Forward candidate if we know the peer
+	callsMu.RLock()
+	if c, ok := pendingCalls[req.CallID]; ok {
+		targetID := c.To
+		if c.From == clusterModule.GetLocalNode().ID {
+			targetID = c.To
+		} else {
+			targetID = c.From
+		}
+		callsMu.RUnlock()
+
+		peersMu.RLock()
+		if p, ok := peers[targetID]; ok {
+			go http.Post("http://"+p.IP+":8080/ice/receive", "application/json",
+				strings.NewReader(`{"call_id":"`+req.CallID+`","candidate":"`+req.Candidate+`"}`))
+		}
+		peersMu.RUnlock()
+	} else {
+		callsMu.RUnlock()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
