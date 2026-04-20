@@ -6,7 +6,7 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache gcc musl-dev libzmq-dev
+RUN apk add --no-cache gcc musl-dev zeromq-dev
 
 COPY go.mod go.sum ./
 RUN go mod download
@@ -16,7 +16,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -o zerophone .
 
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates sqlite libzmq
+RUN apk --no-cache add ca-certificates sqlite zeromq
 
 WORKDIR /app
 
