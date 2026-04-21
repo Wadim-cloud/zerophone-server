@@ -3,46 +3,87 @@
 <head>
     <title>ZeroPhone — Voice Call</title>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; }
+        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; --warning: #f0883e; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
-        .container { max-width: 400px; margin: 0 auto; text-align: center; }
-        h1 { color: var(--accent); margin-bottom: 20px; }
-        .btn { background: var(--accent); color: white; border: none; padding: 16px 32px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; width: 100%; margin: 8px 0; }
-        .btn.call { background: var(--success); }
-        .btn.end { background: var(--danger); }
-        .status { padding: 12px; margin: 12px 0; border-radius: 8px; background: var(--card); }
-        .status.idle { border: 1px solid var(--border); }
-        .status.connecting { border: 1px solid var(--warning); color: #f0883e; }
-        .status.active { border: 1px solid var(--success); color: var(--success); }
-        #peers { margin: 20px 0; }
-        .peer { padding: 12px; margin: 8px 0; border-radius: 8px; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
-        .peer-name { font-weight: 600; }
-        .log { font-size: 0.75rem; color: #8b949e; margin-top: 20px; text-align: left; }
+        .container { max-width: 500px; margin: 0 auto; text-align: center; }
+        h1 { color: var(--accent); margin-bottom: 10px; }
+        .my-name { color: var(--success); font-size: 1.2rem; margin-bottom: 20px; }
+        
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+        .status-bar { padding: 16px; border-radius: 12px; margin-bottom: 16px; font-size: 1.2rem; }
+        .status-bar.idle { border: 2px solid var(--border); color: var(--text); }
+        .status-bar.inviting { border: 2px solid var(--warning); color: var(--warning); background: rgba(240,136,62,0.1); }
+        .status-bar.ringing { border: 2px solid var(--danger); color: var(--danger); background: rgba(248,81,73,0.1); animation: pulse 1s infinite; }
+        .status-bar.connecting { border: 2px solid var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
+        .status-bar.active { border: 2px solid var(--success); color: var(--success); background: rgba(63,185,80,0.1); }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+        
+        .peer { padding: 16px; margin: 8px 0; border-radius: 8px; background: var(--card); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
+        .peer-name { font-weight: 600; font-size: 1.1rem; }
+        .btn { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
+        .btn:hover { opacity: 0.9; }
+        .btn-call { background: var(--success); }
+        .btn-end { background: var(--danger); }
+        .btn-accept { background: var(--success); padding: 16px 32px; font-size: 1.2rem; }
+        .btn-reject { background: var(--danger); padding: 16px 32px; font-size: 1.2rem; }
+        
+        .log { background: var(--card); border-radius: 8px; padding: 12px; font-size: 0.75rem; max-height: 150px; overflow-y: auto; text-align: left; }
+        .log-entry { margin: 4px 0; color: var(--text); }
+        .log-entry.warn { color: var(--warning); }
+        .log-entry.error { color: var(--danger); }
+        .log-entry.success { color: var(--success); }
+        
+        .hidden { display: none !important; }
+        
+        /* Incoming call overlay */
+        .incoming-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(13,17,23,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+        .incoming-caller { font-size: 2rem; color: var(--danger); margin-bottom: 20px; }
+        .incoming-label { font-size: 1.2rem; color: var(--text); margin-bottom: 40px; }
+        .incoming-buttons { display: flex; gap: 20px; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📞 ZeroPhone</h1>
-        <div id="my-name" style="color: var(--accent); margin-bottom: 20px;">Loading...</div>
-
-        <div id="status" class="status idle">Not connected</div>
-
-        <div id="peers"></div>
-
-        <div class="log" id="log"></div>
+        <div id="my-name" class="my-name">Connecting...</div>
+        
+        <!-- Main screen (idle/inviting) -->
+        <div id="main-screen">
+            <div id="status-bar" class="status-bar idle">Ready</div>
+            
+            <div class="card">
+                <h3 style="margin-bottom: 16px;">Contacts</h3>
+                <div id="peers"></div>
+            </div>
+            
+            <div class="log" id="log"></div>
+        </div>
+        
+        <!-- Incoming call overlay -->
+        <div id="incoming-overlay" class="incoming-overlay hidden">
+            <div class="incoming-caller" id="incoming-caller-name">Unknown</div>
+            <div class="incoming-label">is calling you...</div>
+            <div class="incoming-buttons">
+                <button class="btn btn-accept" onclick="acceptCall()">✅ Answer</button>
+                <button class="btn btn-reject" onclick="rejectCall()">❌ Decline</button>
+            </div>
+        </div>
     </div>
 
     <script>
         const SERVER = location.origin;
         const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/';
         
-        // State
         let ws = null;
         let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
         let myName = localStorage.getItem('zerophone_name') || prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
         if (myName) localStorage.setItem('zerophone_name', myName);
+        localStorage.setItem('zerophone_id', myId);
+        
         let peers = [];
         let callState = 'idle';
         let callId = '';
@@ -52,10 +93,8 @@
         let incomingOffer = null;
         let pendingCandidates = [];
         
-        // Call states
         const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
         
-        // WebRTC config with STUN/TURN
         const rtcConfig = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
@@ -71,40 +110,57 @@
             entry.className = 'log-entry ' + type;
             entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
             el.insertBefore(entry, el.firstChild);
+            if (el.children.length > 50) el.lastChild.remove();
         }
         
-        function updateStatus(s) {
+        function updateStatus(s, text) {
             callState = s;
-            const el = document.getElementById('status');
-            el.className = 'status ' + s;
-            const texts = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming...', connecting: 'Connecting...', active: 'In Call' };
-            el.textContent = texts[s] || s;
+            const el = document.getElementById('status-bar');
+            el.className = 'status-bar ' + s;
+            const texts = {
+                idle: 'Ready',
+                inviting: 'Calling...',
+                ringing: 'Incoming call!',
+                connecting: 'Connecting...',
+                active: 'In Call 📞'
+            };
+            el.textContent = text || texts[s] || s;
+        }
+        
+        function showIncomingCall(from) {
+            document.getElementById('incoming-caller-name').textContent = from;
+            document.getElementById('incoming-overlay').classList.remove('hidden');
+            updateStatus(CallState.RINGING, 'Incoming from ' + from);
+        }
+        
+        function hideIncomingCall() {
+            document.getElementById('incoming-overlay').classList.add('hidden');
         }
         
         function connect() {
             ws = new WebSocket(WS_URL + myId);
             
             ws.onopen = () => {
+                document.getElementById('my-name').textContent = myName + ' ✓';
                 log('Connected as ' + myName, 'success');
-                document.getElementById('my-name').textContent = myName;
                 updateStatus(CallState.IDLE);
                 getUserMedia();
-                refreshPeers();
+                ws.send(JSON.stringify({ type: 'GET_USERS' }));
             };
             
             ws.onmessage = async (e) => {
                 const msg = JSON.parse(e.data);
-                log('[WS] ' + msg.type, 'info');
                 await handleMessage(msg);
             };
             
             ws.onclose = () => {
                 log('Disconnected, reconnecting...', 'error');
+                document.getElementById('my-name').textContent = 'Reconnecting...';
                 updateStatus(CallState.IDLE);
                 setTimeout(connect, 3000);
             };
             
-            ws.onerror = (e) => log('Error: ' + e, 'error');
+            ws.onerror = () => log('WebSocket error', 'error');
         }
         
         async function handleMessage(msg) {
@@ -121,36 +177,38 @@
                         callId = msg.call_id;
                         callPeerId = msg.from;
                         incomingOffer = msg.payload?.sdp || msg.sdp;
-                        updateStatus(CallState.RINGING);
-                        document.getElementById('status').textContent = 'Incoming from ' + (msg.from_name || msg.from);
-                        log('Incoming call from ' + (msg.from_name || msg.from), 'warn');
+                        const callerName = msg.from_name || msg.from;
+                        showIncomingCall(callerName);
+                        log('Incoming call from ' + callerName, 'warn');
                         renderPeers();
                     }
                     break;
                     
                 case 'CALL_ACCEPT':
                     if (callState === CallState.INVITING) {
-                        updateStatus(CallState.CONNECTING);
+                        updateStatus(CallState.CONNECTING, 'Connected!');
                         if (pc && msg.payload?.sdp) {
                             await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+                            for (const c of pendingCandidates) {
+                                await pc.addIceCandidate(new RTCIceCandidate(c));
+                            }
+                            pendingCandidates = [];
                         }
-                        updateStatus(CallState.ACTIVE);
+                        updateStatus(CallState.ACTIVE, 'In Call 📞');
                         log('Call connected!', 'success');
                     }
                     break;
                     
                 case 'CALL_REJECT':
-                    log('Call rejected', 'error');
+                    log('Call was declined', 'error');
                     endCall();
                     break;
                     
-                case 'ICE_CANDIDATE':
                 case 'ICE':
+                case 'ICE_CANDIDATE':
                     if (pc && pc.remoteDescription) {
-                        const candidate = msg.candidate || msg.payload;
-                        if (candidate) {
-                            await pc.addIceCandidate(new RTCIceCandidate(candidate));
-                        }
+                        const c = msg.candidate || msg.payload;
+                        if (c) await pc.addIceCandidate(new RTCIceCandidate(c));
                     } else {
                         pendingCandidates.push(msg.candidate || msg.payload);
                     }
@@ -177,19 +235,15 @@
         function renderPeers() {
             const el = document.getElementById('peers');
             if (peers.length === 0) {
-                el.innerHTML = '<div style="color: var(--muted); padding: 20px;">No contacts online</div>';
+                el.innerHTML = '<div style="color: var(--text); opacity: 0.5; padding: 20px;">No contacts online. Open another tab to test!</div>';
                 return;
             }
             el.innerHTML = peers.map(p => 
                 '<div class="peer">' +
-                    '<div><div class="peer-name">' + (p.name || p.id) + '</div></div>' +
-                    '<button class="btn btn-call" style="width: auto; padding: 8px 16px;" onclick="makeCall(\'' + p.id + '\')">Call</button>' +
+                    '<div class="peer-name">' + (p.name || p.id) + '</div>' +
+                    '<button class="btn btn-call" onclick="makeCall(\'' + p.id + '\')">📞 Call</button>' +
                 '</div>'
             ).join('');
-        }
-        
-        async function refreshPeers() {
-            ws.send(JSON.stringify({ type: 'GET_USERS' }));
         }
         
         async function makeCall(peerId) {
@@ -199,16 +253,21 @@
             callPeerId = peerId;
             const peer = peers.find(p => p.id === peerId);
             
-            updateStatus(CallState.INVITING);
+            updateStatus(CallState.INVITING, 'Calling ' + (peer?.name || peerId) + '...');
             log('Calling ' + (peer?.name || peerId));
             
             pc = new RTCPeerConnection(rtcConfig);
             
-            pc.oniceconnectionstatechange = () => log('[ICE] ' + pc.iceConnectionState);
+            pc.oniceconnectionstatechange = () => {
+                log('[ICE] ' + pc.iceConnectionState);
+                if (pc.iceConnectionState === 'failed') {
+                    log('ICE connection failed - check network/TURN', 'error');
+                }
+            };
             pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
             
             pc.onicecandidate = (e) => {
-                if (e.candidate && ws && ws.readyState === 1) {
+                if (e.candidate && ws?.readyState === 1) {
                     ws.send(JSON.stringify({ type: 'ICE', to: peerId, call_id: callId, candidate: e.candidate }));
                 }
             };
@@ -218,6 +277,7 @@
                 audio.srcObject = e.streams[0];
                 audio.autoplay = true;
                 audio.controls = true;
+                audio.style.cssText = 'width: 100%; margin-top: 16px;';
                 document.body.appendChild(audio);
             };
             
@@ -237,7 +297,13 @@
         }
         
         async function acceptCall() {
-            if (!callPeerId || !incomingOffer) return;
+            if (!callPeerId || !incomingOffer) {
+                log('No incoming call', 'error');
+                return;
+            }
+            
+            hideIncomingCall();
+            updateStatus(CallState.CONNECTING, 'Connecting...');
             
             pc = new RTCPeerConnection(rtcConfig);
             
@@ -245,7 +311,7 @@
             pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
             
             pc.onicecandidate = (e) => {
-                if (e.candidate && ws && ws.readyState === 1) {
+                if (e.candidate && ws?.readyState === 1) {
                     ws.send(JSON.stringify({ type: 'ICE', to: callPeerId, call_id: callId, candidate: e.candidate }));
                 }
             };
@@ -255,6 +321,7 @@
                 audio.srcObject = e.streams[0];
                 audio.autoplay = true;
                 audio.controls = true;
+                audio.style.cssText = 'width: 100%; margin-top: 16px;';
                 document.body.appendChild(audio);
             };
             
@@ -262,39 +329,45 @@
                 localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
             }
             
-            updateStatus(CallState.CONNECTING);
-            
-            await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
-            
-            // Add buffered candidates
-            for (const c of pendingCandidates) {
-                await pc.addIceCandidate(new RTCIceCandidate(c));
+            try {
+                await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+                
+                for (const c of pendingCandidates) {
+                    await pc.addIceCandidate(new RTCIceCandidate(c));
+                }
+                pendingCandidates = [];
+                
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                
+                ws.send(JSON.stringify({
+                    type: 'CALL_ACCEPT',
+                    to: callPeerId,
+                    call_id: callId,
+                    payload: { sdp: pc.localDescription }
+                }));
+                
+                updateStatus(CallState.ACTIVE, 'In Call 📞');
+                log('Call answered!', 'success');
+            } catch(e) {
+                log('Error answering: ' + e.message, 'error');
             }
-            pendingCandidates = [];
-            
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            
-            ws.send(JSON.stringify({
-                type: 'CALL_ACCEPT',
-                to: callPeerId,
-                call_id: callId,
-                payload: { sdp: pc.localDescription }
-            }));
-            
-            updateStatus(CallState.ACTIVE);
-            log('Call answered', 'success');
         }
         
         function rejectCall() {
             if (!callPeerId) return;
             ws.send(JSON.stringify({ type: 'CALL_REJECT', to: callPeerId, call_id: callId }));
+            log('Call declined');
             endCall();
         }
         
         function endCall() {
-            if (pc) { pc.close(); pc = null; }
-            if (ws && ws.readyState === 1 && callPeerId) {
+            hideIncomingCall();
+            if (pc) { 
+                pc.close(); 
+                pc = null; 
+            }
+            if (ws?.readyState === 1 && callPeerId) {
                 ws.send(JSON.stringify({ type: 'CALL_END', to: callPeerId, call_id: callId }));
             }
             callState = CallState.IDLE;
@@ -302,11 +375,12 @@
             callPeerId = '';
             incomingOffer = null;
             pendingCandidates = [];
-            updateStatus(CallState.IDLE);
+            updateStatus(CallState.IDLE, 'Ready');
             renderPeers();
             log('Call ended');
         }
         
+        // Start
         connect();
     </script>
 </body>
