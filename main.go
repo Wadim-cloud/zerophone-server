@@ -276,9 +276,6 @@ func main() {
 
 	started = time.Now()
 
-	// Set global TLS mode - must be set before routes use it
-	useTLS = (*certFile != "" && *keyFile != "")
-
 	router := mux.NewRouter()
 
 	wsHub = cluster.InitWSHub()
@@ -335,10 +332,20 @@ func main() {
 		go clientLoop()
 	}
 
-	bindAddr := *addr
-	if *addr == ":8080" {
-		bindAddr = "0.0.0.0:8080"
+	bindAddr := "0.0.0.0:8080"
+
+	// Check for TLS certificates - use flags or fall back to local cert.pem/key.pem
+	certPath := *certFile
+	keyPath := *keyFile
+	if certPath == "" || keyPath == "" {
+		if _, err := os.Stat("cert.pem"); err == nil {
+			certPath = "cert.pem"
+		}
+		if _, err := os.Stat("key.pem"); err == nil {
+			keyPath = "key.pem"
+		}
 	}
+	useTLS = (certPath != "" && keyPath != "")
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
 
@@ -351,9 +358,10 @@ func main() {
 				MinVersion: tls.VersionTLS12,
 			},
 		}
-		log.Printf("HTTPS enabled with %s", *certFile)
-		log.Fatal(server.ListenAndServeTLS(*certFile, *keyFile))
+		log.Printf("HTTPS enabled with %s", certPath)
+		log.Fatal(server.ListenAndServeTLS(certPath, keyPath))
 	} else {
+		log.Printf("HTTP mode (no certificates found)")
 		log.Fatal(http.ListenAndServe(bindAddr, router))
 	}
 }
