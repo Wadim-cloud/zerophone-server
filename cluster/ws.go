@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -23,9 +24,7 @@ const (
 	MsgJoin       = "JOIN"
 )
 
-// Client names storage
-var clientNames = make(map[string]string)
-
+// Call states
 const (
 	CallStateIdle       = "IDLE"
 	CallStateInviting   = "INVITING"
@@ -34,6 +33,31 @@ const (
 	CallStateActive     = "ACTIVE"
 	CallStateTerminated = "TERMINATED"
 )
+
+// Valid state transitions
+var validTransitions = map[string][]string{
+	CallStateIdle:       {CallStateInviting},
+	CallStateInviting:   {CallStateRinging, CallStateTerminated},
+	CallStateRinging:    {CallStateConnecting, CallStateTerminated},
+	CallStateConnecting: {CallStateActive, CallStateTerminated},
+	CallStateActive:     {CallStateTerminated},
+}
+
+func isValidTransition(from, to string) bool {
+	allowed, ok := validTransitions[from]
+	if !ok {
+		return false
+	}
+	for _, s := range allowed {
+		if s == to {
+			return true
+		}
+	}
+	return false
+}
+
+// Client names storage
+var clientNames = make(map[string]string)
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
@@ -55,13 +79,14 @@ var (
 	callSessions = make(map[string]*CallSession)
 	sessionsMu   sync.RWMutex
 
-	// ICE buffering
+	// ICE buffering per session
 	pendingICE = make(map[string][]string)
 	iceMu      sync.RWMutex
 )
 
 type WSClient struct {
 	ID   string
+	Name string
 	Conn *websocket.Conn
 	Send chan []byte
 }
@@ -99,16 +124,9 @@ func (h *WSHub) Run() {
 			h.clients[client.ID] = client
 			clientCount := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("[WS] client connected: %s (total: %d)", client.ID, clientCount)
-			// Broadcast new user list to all clients
-			go func() {
-				users := h.getUserList()
-				h.mu.RLock()
-				for _, c := range h.clients {
-					c.Send <- []byte(users)
-				}
-				h.mu.RUnlock()
-			}()
+			log.Printf("[WS] client connected: %s as '%s' (total: %d)", client.ID, client.Name, clientCount)
+			// Broadcast updated user list
+			h.broadcastUserList()
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -118,6 +136,8 @@ func (h *WSHub) Run() {
 			}
 			h.mu.Unlock()
 			log.Println("[WS] client disconnected:", client.ID)
+			// Broadcast updated user list
+			h.broadcastUserList()
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
@@ -132,6 +152,29 @@ func (h *WSHub) Run() {
 			h.mu.RUnlock()
 		}
 	}
+}
+
+func (h *WSHub) broadcastUserList() {
+	users := h.GetAllClients()
+	userList := make([]map[string]string, 0, len(users))
+	for _, id := range users {
+		name := id
+		if n, ok := clientNames[id]; ok {
+			name = n
+		}
+		userList = append(userList, map[string]string{"id": id, "name": name})
+	}
+
+	data, _ := json.Marshal(map[string]interface{}{
+		"type":  MsgUsers,
+		"users": userList,
+	})
+
+	h.mu.RLock()
+	for _, c := range h.clients {
+		c.Send <- data
+	}
+	h.mu.RUnlock()
 }
 
 func (h *WSHub) Register(client *WSClient) {
@@ -159,18 +202,28 @@ func (h *WSHub) GetAllClients() []string {
 	return ids
 }
 
-func (h *WSHub) getUserList() string {
+func (h *WSHub) SendTo(nodeID string, data []byte) bool {
 	h.mu.RLock()
-	clients := make([]map[string]string, 0, len(h.clients))
-	for id := range h.clients {
-		clients = append(clients, map[string]string{"id": id, "name": id})
-	}
+	client, ok := h.clients[nodeID]
 	h.mu.RUnlock()
-	data, _ := json.Marshal(map[string]interface{}{
-		"type":  MsgUsers,
-		"users": clients,
-	})
-	return string(data)
+
+	if !ok {
+		return false
+	}
+
+	select {
+	case client.Send <- data:
+		return true
+	default:
+		h.mu.Lock()
+		delete(h.clients, nodeID)
+		h.mu.Unlock()
+		return false
+	}
+}
+
+func (h *WSHub) Broadcast(msg []byte) {
+	h.broadcast <- msg
 }
 
 // Call Session Management
@@ -196,18 +249,29 @@ func GetCallSession(callID string) *CallSession {
 	return callSessions[callID]
 }
 
-func UpdateCallState(callID, state string) {
+func UpdateCallState(callID, newState string) bool {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
-	if s, ok := callSessions[callID]; ok {
-		log.Printf("[CALL] Session %s: %s -> %s", callID, s.State, state)
-		s.State = state
+
+	s, ok := callSessions[callID]
+	if !ok {
+		return false
 	}
+
+	if !isValidTransition(s.State, newState) {
+		log.Printf("[CALL] INVALID transition %s: %s -> %s", callID, s.State, newState)
+		return false
+	}
+
+	log.Printf("[CALL] %s: %s -> %s", callID, s.State, newState)
+	s.State = newState
+	return true
 }
 
 func EndCallSession(callID string) {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
+
 	if _, ok := callSessions[callID]; ok {
 		log.Printf("[CALL] Ended session %s", callID)
 		delete(callSessions, callID)
@@ -234,28 +298,40 @@ func GetBufferedICE(callID string) []string {
 	return candidates
 }
 
-func (h *WSHub) SendTo(nodeID string, msg []byte) bool {
-	h.mu.RLock()
-	client, ok := h.clients[nodeID]
-	h.mu.RUnlock()
-
-	if !ok {
-		return false
+// Flush buffered ICE candidates to peer
+func flushICE(callID, to string) {
+	candidates := GetBufferedICE(callID)
+	if len(candidates) == 0 {
+		return
 	}
 
-	select {
-	case client.Send <- msg:
-		return true
-	default:
-		h.mu.Lock()
-		delete(h.clients, nodeID)
-		h.mu.Unlock()
-		return false
+	log.Printf("[ICE] Flushing %d candidates to %s", len(candidates), to)
+
+	for _, ice := range candidates {
+		msg := map[string]interface{}{
+			"type":      MsgICE,
+			"call_id":   callID,
+			"from":      "",
+			"to":        to,
+			"candidate": ice,
+		}
+		data, _ := json.Marshal(msg)
+		wsHub.SendTo(to, data)
 	}
 }
 
-func (h *WSHub) Broadcast(msg []byte) {
-	h.broadcast <- msg
+func mustJSON(v interface{}) []byte {
+	b, _ := json.Marshal(v)
+	return b
+}
+
+// Validate session access
+func isSessionParticipant(callID, nodeID string) bool {
+	session := GetCallSession(callID)
+	if session == nil {
+		return false
+	}
+	return session.Caller == nodeID || session.Callee == nodeID
 }
 
 func (c *WSClient) ReadPump() {
@@ -323,41 +399,44 @@ func (c *WSClient) WritePump() {
 }
 
 type VoIPMessage struct {
-	Type    string          `json:"type"`
-	CallID  string          `json:"call_id,omitempty"`
-	From    string          `json:"from"`
-	To      string          `json:"to,omitempty"`
-	SDP     string          `json:"sdp,omitempty"`
-	ICE     string          `json:"ice,omitempty"`
-	Code    int             `json:"code,omitempty"`
-	Time    int64           `json:"time"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	Type      string          `json:"type"`
+	CallID    string          `json:"call_id,omitempty"`
+	From      string          `json:"from,omitempty"`
+	To        string          `json:"to,omitempty"`
+	SDP       string          `json:"sdp,omitempty"`
+	Candidate string          `json:"candidate,omitempty"`
+	ICE       string          `json:"ice,omitempty"`
+	Code      int             `json:"code,omitempty"`
+	Time      int64           `json:"time"`
+	Payload   json.RawMessage `json:"payload,omitempty"`
 }
 
 func HandleVoIPMessage(from string, msg VoIPMessage) {
-	log.Printf("[WS] received: %s from=%s", msg.Type, from)
+	log.Printf("[WS] %s from=%s to=%s call=%s", msg.Type, from, msg.To, msg.CallID)
 
 	// Handle JOIN - store client name
 	if msg.Type == MsgJoin || msg.Type == "JOIN" {
-		// Get name from Payload if it's a JSON object
+		var joinName string
 		if msg.Payload != nil {
 			var joinData struct {
 				Name string `json:"name"`
 			}
 			json.Unmarshal(msg.Payload, &joinData)
-			if joinData.Name != "" {
-				clientNames[from] = joinData.Name
-				log.Printf("[WS] %s joined as '%s'", from, joinData.Name)
-			}
+			joinName = joinData.Name
 		}
-		// Also try From field as fallback
-		if name := clientNames[from]; name == "" && msg.From != "" {
-			clientNames[from] = msg.From
+		if joinName == "" {
+			joinName = msg.From
 		}
+		if joinName != "" {
+			clientNames[from] = joinName
+			log.Printf("[WS] %s joined as '%s'", from, joinName)
+		}
+		// Broadcast updated user list on JOIN
+		wsHub.broadcastUserList()
 	}
 
-	// ALWAYS respond to GET_USERS with list of all clients with names
-	if msg.Type == MsgGetUsers || msg.Type == "GET_USERS" || msg.Type == MsgJoin || msg.Type == "JOIN" {
+	// Respond to GET_USERS
+	if msg.Type == MsgGetUsers || msg.Type == "GET_USERS" {
 		users := wsHub.GetAllClients()
 		userList := make([]map[string]string, len(users))
 		for i, userID := range users {
@@ -367,28 +446,130 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 			}
 			userList[i] = map[string]string{"id": userID, "name": name}
 		}
-		log.Printf("[WS] USERS: %d clients to %s", len(users), from)
 
-		// Send to all clients
 		resp := map[string]interface{}{
-			"type":  "USERS",
+			"type":  MsgUsers,
 			"users": userList,
 		}
 		data, _ := json.Marshal(resp)
-		for _, userID := range users {
-			wsHub.SendTo(userID, data)
+		wsHub.SendTo(from, data)
+		return
+	}
+
+	// Handle CALL_INVITE
+	if msg.Type == MsgCallInvite {
+		if msg.To == "" {
+			log.Printf("[CALL] INVITE without destination")
+			return
+		}
+
+		// Check if callee is online
+		if _, ok := wsHub.GetClient(msg.To); !ok {
+			log.Printf("[CALL] Callee %s not online", msg.To)
+			return
+		}
+
+		// Create session
+		callID := msg.CallID
+		if callID == "" {
+			callID = "call-" + fmt.Sprintf("%d", time.Now().UnixNano())
+		}
+
+		CreateCallSession(callID, from, msg.To)
+
+		// Relay to callee
+		msg.From = from
+		msg.CallID = callID
+		data, _ := json.Marshal(msg)
+		if wsHub.SendTo(msg.To, data) {
+			log.Printf("[CALL] INVITE relayed to %s (call_id: %s)", msg.To, callID)
 		}
 		return
 	}
 
-	// For all other messages, relay to 'to' if specified
-	if msg.To != "" {
-		msg.From = from // set sender
+	// Handle CALL_ACCEPT
+	if msg.Type == MsgCallAccept {
+		if !UpdateCallState(msg.CallID, CallStateConnecting) {
+			return
+		}
+
+		// Relay to caller
+		msg.From = from
+		data, _ := json.Marshal(msg)
+		session := GetCallSession(msg.CallID)
+		if session != nil {
+			wsHub.SendTo(session.Caller, data)
+			// Flush buffered ICE to caller
+			go flushICE(msg.CallID, session.Caller)
+		}
+		return
+	}
+
+	// Handle CALL_REJECT
+	if msg.Type == MsgCallReject {
+		session := GetCallSession(msg.CallID)
+		if session != nil {
+			UpdateCallState(msg.CallID, CallStateTerminated)
+			msg.From = from
+			data, _ := json.Marshal(msg)
+			wsHub.SendTo(session.Caller, data)
+		}
+		return
+	}
+
+	// Handle ICE candidate
+	if msg.Type == MsgICE || msg.Type == "ICE_CANDIDATE" {
+		candidate := msg.Candidate
+		if candidate == "" {
+			candidate = msg.ICE
+		}
+
+		if msg.To == "" {
+			return
+		}
+
+		// Try immediate send
+		msg.From = from
+		data, _ := json.Marshal(msg)
+		if !wsHub.SendTo(msg.To, data) {
+			// Buffer if peer not ready
+			if msg.CallID != "" {
+				BufferICE(msg.CallID, candidate)
+			}
+		}
+		return
+	}
+
+	// Handle CALL_END
+	if msg.Type == MsgCallEnd {
+		session := GetCallSession(msg.CallID)
+		if session != nil {
+			UpdateCallState(msg.CallID, CallStateTerminated)
+			msg.From = from
+
+			// Notify other participant
+			if session.Caller != from {
+				wsHub.SendTo(session.Caller, mustJSON(msg))
+			}
+			if session.Callee != from {
+				wsHub.SendTo(session.Callee, mustJSON(msg))
+			}
+		}
+		return
+	}
+
+	// Generic relay with session validation
+	if msg.To != "" && msg.CallID != "" {
+		// Validate sender is participant
+		if !isSessionParticipant(msg.CallID, from) {
+			log.Printf("[SECURITY] %s tried invalid access to %s", from, msg.CallID)
+			return
+		}
+
+		msg.From = from
 		data, _ := json.Marshal(msg)
 		if wsHub.SendTo(msg.To, data) {
-			log.Printf("[WS] relayed %s to %s", msg.Type, msg.To)
-		} else {
-			log.Printf("[WS] failed to send to %s", msg.To)
+			log.Printf("[WS] relayed %s -> %s", msg.Type, msg.To)
 		}
 	}
 }
@@ -405,6 +586,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := &WSClient{
 		ID:   userID,
+		Name: userID,
 		Conn: conn,
 		Send: make(chan []byte, 256),
 	}

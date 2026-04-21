@@ -366,6 +366,17 @@
             
             callId = 'call-' + Date.now();
             callPeerId = peerId;
+            const peer = peers.find(p => p.id === peerId);
+            
+            pc = new RTCPeerConnection(rtcConfig);
+            
+            // Log connection states
+            pc.onconnectionstatechange = () => {
+                console.log('[WebRTC] Connection:', pc.connectionState);
+            };
+            pc.oniceconnectionstatechange = () => {
+                console.log('[WebRTC] ICE:', pc.iceConnectionState);
+            };
             callState = CallState.INVITING;
             
             const peer = peers.find(p => p.id === peerId);
