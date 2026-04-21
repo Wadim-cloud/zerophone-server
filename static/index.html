@@ -243,7 +243,12 @@
             console.log('[WS] received:', msg.type, msg);
             switch(msg.type) {
                 case 'USERS':
-                    peers = msg.users || [];
+                    // Handle both formats: array of strings or array of objects
+                    if (Array.isArray(msg.users)) {
+                        peers = msg.users.map(u => typeof u === 'string' ? { id: u, name: u } : u);
+                    } else {
+                        peers = [];
+                    }
                     log('Users online: ' + peers.length);
                     renderPeers();
                     break;
