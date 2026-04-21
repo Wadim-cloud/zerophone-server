@@ -379,16 +379,14 @@
             };
             callState = CallState.INVITING;
             
-            const peer = peers.find(p => p.id === peerId);
-            document.getElementById('outgoing-callee').textContent = peer?.name || peerId;
+            const peerInfo = peers.find(p => p.id === peerId);
+            document.getElementById('outgoing-callee').textContent = peerInfo?.name || peerId;
             showScreen('outgoing-screen');
-            log('Calling ' + (peer?.name || peerId));
+            log('Calling ' + (peerInfo?.name || peerId));
             
-            // Create WebRTC connection
-            pc = new RTCPeerConnection(rtcConfig);
             pc.onicecandidate = (e) => {
                 if (e.candidate && ws && ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: peerId, call_id: callId, payload: e.candidate }));
+                    ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: peerId, call_id: callId, candidate: e.candidate }));
                 }
             };
             pc.ontrack = (e) => {
