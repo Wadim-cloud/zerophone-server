@@ -3,271 +3,116 @@
 <head>
     <title>ZeroPhone — Voice Call</title>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        :root {
-            --bg: #0d1117; --card: #161b22; --border: #30363d;
-            --text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
-            --success: #3fb950; --danger: #f85149; --warning: #f0883e;
-        }
+        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg); color: var(--text); padding: 20px;
-            min-height: 100vh;
-        }
-        .container { max-width: 600px; margin: 0 auto; }
-        header {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-bottom: 24px; padding-bottom: 16px;
-            border-bottom: 1px solid var(--border);
-        }
-        h1 { color: var(--accent); font-size: 1.5rem; }
-        .btn {
-            background: var(--accent); color: white; border: none;
-            padding: 12px 24px; border-radius: 8px; cursor: pointer;
-            font-size: 1rem; width: 100%; margin: 8px 0;
-        }
-        .btn:hover { opacity: 0.9; }
-        .btn-call { background: var(--success); }
-        .btn-end { background: var(--danger); }
-        
-        .card {
-            background: var(--card); border: 1px solid var(--border);
-            border-radius: 8px; padding: 20px; margin-bottom: 16px;
-        }
-        .peer {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 12px; border-bottom: 1px solid var(--border);
-        }
-        .peer:last-child { border-bottom: none; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
+        .container { max-width: 400px; margin: 0 auto; text-align: center; }
+        h1 { color: var(--accent); margin-bottom: 20px; }
+        .btn { background: var(--accent); color: white; border: none; padding: 16px 32px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; width: 100%; margin: 8px 0; }
+        .btn.call { background: var(--success); }
+        .btn.end { background: var(--danger); }
+        .status { padding: 12px; margin: 12px 0; border-radius: 8px; background: var(--card); }
+        .status.idle { border: 1px solid var(--border); }
+        .status.connecting { border: 1px solid var(--warning); color: #f0883e; }
+        .status.active { border: 1px solid var(--success); color: var(--success); }
+        #peers { margin: 20px 0; }
+        .peer { padding: 12px; margin: 8px 0; border-radius: 8px; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
         .peer-name { font-weight: 600; }
-        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
-        .online { background: rgba(63,185,80,0.2); color: var(--success); }
-        .offline { background: rgba(248,81,73,0.2); color: var(--danger); }
-        
-        .log {
-            background: var(--card); border-radius: 8px; padding: 12px;
-            font-family: monospace; font-size: 0.75rem; max-height: 200px; overflow-y: auto;
-        }
-        .log-entry { color: var(--muted); margin: 4px 0; }
-        
-        /* Call screens */
-        .call-screen { display: none; text-align: center; padding: 40px; }
-        .call-screen.active { display: block; }
-        .call-timer { font-size: 2rem; font-weight: 600; margin: 20px 0; }
-        
-        /* Debug panel */
-        .debug {
-            background: var(--card); border: 1px solid var(--border);
-            border-radius: 8px; padding: 16px; margin-top: 16px;
-            font-size: 0.75rem;
-        }
-        .debug-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+        .log { font-size: 0.75rem; color: #8b949e; margin-top: 20px; text-align: left; }
     </style>
 </head>
 <body>
     <div class="container">
-        <header>
-            <h1>📞 ZeroPhone</h1>
-            <span id="my-name" style="color: var(--muted)">-</span>
-        </header>
-        
-        <!-- Main screen -->
-        <div id="main-screen">
-            <div class="card">
-                <h3>Contacts</h3>
-                <div id="peers">
-                    <div style="color: var(--muted); padding: 20px; text-align: center;">
-                        Connecting to network...
-                    </div>
-                </div>
-                <button class="btn" onclick="refreshPeers()">↻ Refresh</button>
-            </div>
-            
-            <div class="card">
-                <h3>Activity</h3>
-                <div class="log" id="log"></div>
-            </div>
-            
-            <div class="debug">
-                <h3>🔧 Debug</h3>
-                <div class="debug-grid">
-                    <div>State: <span id="debug-state">idle</span></div>
-                    <div>WS: <span id="debug-ws">disconnected</span></div>
-                    <div>Peers: <span id="debug-peers">0</span></div>
-                    <div>Calls: <span id="debug-calls">0</span></div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Incoming call -->
-        <div id="incoming-screen" class="call-screen">
-            <h2>Incoming Call</h2>
-            <div class="call-timer" id="incoming-caller">-</div>
-            <p>is calling you...</p>
-            <button class="btn btn-call" onclick="acceptCall()">Answer</button>
-            <button class="btn btn-end" onclick="rejectCall()">Reject</button>
-        </div>
-        
-        <!-- Outgoing call -->
-        <div id="outgoing-screen" class="call-screen">
-            <h2>Calling...</h2>
-            <div class="call-timer" id="outgoing-callee">-</div>
-            <button class="btn btn-end" onclick="endCall()">End Call</button>
-        </div>
-        
-        <!-- Active call -->
-        <div id="active-screen" class="call-screen">
-            <h2>In Call</h2>
-            <div class="call-timer" id="call-peer">-</div>
-            <button class="btn btn-end" onclick="endCall()">End Call</button>
-        </div>
+        <h1>📞 ZeroPhone</h1>
+        <div id="my-name" style="color: var(--accent); margin-bottom: 20px;">Loading...</div>
+
+        <div id="status" class="status idle">Not connected</div>
+
+        <div id="peers"></div>
+
+        <div class="log" id="log"></div>
     </div>
-    
+
     <script>
-        // Config
         const SERVER = location.origin;
-        const WS_URL = SERVER.replace(/^http/, 'ws') + '/ws/';
+        const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/';
         
         // State
         let ws = null;
-        let myId = localStorage.getItem('zerophone_id');
-        // Prompt for name if not set
-        let myName = localStorage.getItem('zerophone_name');
-        if (!myName) {
-            myName = prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
-            if (myName) localStorage.setItem('zerophone_name', myName);
-        }
+        let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
+        let myName = localStorage.getItem('zerophone_name') || prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
+        if (myName) localStorage.setItem('zerophone_name', myName);
         let peers = [];
         let callState = 'idle';
         let callId = '';
         let callPeerId = '';
         let pc = null;
         let localStream = null;
+        let incomingOffer = null;
+        let pendingCandidates = [];
         
         // Call states
-        const CallState = {
-            IDLE: 'idle',
-            INVITING: 'inviting',
-            RINGING: 'ringing', 
-            CONNECTING: 'connecting',
-            ACTIVE: 'active'
-        };
+        const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
         
-        // WebRTC config with STUN and TURN
+        // WebRTC config with STUN/TURN
         const rtcConfig = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { 
-                    urls: 'turn:turn.wadiem.cloudns.be:3478',
-                    username: 'zerophone',
-                    credential: 'secretpassword'
-                }
+                { urls: 'turn:turn.wadiem.cloudns.be:3478', username: 'zerophone', credential: 'zerophone123' }
             ]
         };
         
-        // Logging
         function log(msg, type = 'info') {
             const el = document.getElementById('log');
             const entry = document.createElement('div');
             entry.className = 'log-entry ' + type;
             entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
             el.insertBefore(entry, el.firstChild);
-            if (el.children.length > 50) el.lastChild.remove();
         }
         
-        // Debug display
-        function updateDebug() {
-            document.getElementById('debug-state').textContent = callState;
-            document.getElementById('debug-ws').textContent = ws ? (ws.readyState === 1 ? 'connected' : 'connecting') : 'disconnected';
-            document.getElementById('debug-peers').textContent = peers.length;
-            document.getElementById('debug-calls').textContent = callState !== 'idle' ? '1' : '0';
+        function updateStatus(s) {
+            callState = s;
+            const el = document.getElementById('status');
+            el.className = 'status ' + s;
+            const texts = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming...', connecting: 'Connecting...', active: 'In Call' };
+            el.textContent = texts[s] || s;
         }
         
-        // WebSocket connection
-        function connectWS() {
-            if (!myId) {
-                // Register first
-                fetch(SERVER + '/register', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({name: myName})
-                }).then(r => {
-                    const contentType = r.headers.get('content-type');
-                    if (!contentType || !contentType.includes('application/json')) {
-                        throw new Error('Server returned error: ' + r.status);
-                    }
-                    return r.json();
-                }).then(d => {
-                    myId = d.id;
-                    localStorage.setItem('zerophone_id', myId);
-                    localStorage.setItem('zerophone_name', myName);
-                    document.getElementById('my-name').textContent = myName;
-                    connectWS();
-                }).catch(e => {
-                    log('Register failed: ' + e.message, 'error');
-                    setTimeout(connectWS, 5000);
-                });
-                return;
-            }
-            
+        function connect() {
             ws = new WebSocket(WS_URL + myId);
             
             ws.onopen = () => {
-                log('WS Connected! I am: ' + myName, 'success');
-                console.log('[WS] Connected as ' + myId + ' (' + myName + ')');
+                log('Connected as ' + myName, 'success');
                 document.getElementById('my-name').textContent = myName;
-                updateDebug();
+                updateStatus(CallState.IDLE);
                 getUserMedia();
-                // Send JOIN message with our name (in payload for proper parsing)
-                ws.send(JSON.stringify({ 
-                    type: 'JOIN', 
-                    from: myId,
-                    payload: { name: myName }
-                }));
+                refreshPeers();
             };
             
             ws.onmessage = async (e) => {
-                console.log('[WS] Raw message:', e.data);
                 const msg = JSON.parse(e.data);
-                handleMessage(msg);
+                log('[WS] ' + msg.type, 'info');
+                await handleMessage(msg);
             };
             
             ws.onclose = () => {
-                log('Disconnected, reconnecting...');
-                updateDebug();
-                setTimeout(connectWS, 3000);
+                log('Disconnected, reconnecting...', 'error');
+                updateStatus(CallState.IDLE);
+                setTimeout(connect, 3000);
             };
             
-            ws.onerror = (e) => {
-                console.log('[WS] Error:', e);
-                log('WS Error: ' + e, 'error');
-            };
+            ws.onerror = (e) => log('Error: ' + e, 'error');
         }
         
-        // Handle incoming WebSocket messages
         async function handleMessage(msg) {
-            console.log('[WS] received:', msg.type, msg);
             switch(msg.type) {
                 case 'USERS':
-                    // Handle both formats: array of strings or array of objects
                     if (Array.isArray(msg.users)) {
-                        peers = msg.users.map(u => {
-                            if (typeof u === 'string') {
-                                return { id: u, name: u };
-                            } else if (u.name) {
-                                return { id: u.id || u.name, name: u.name };
-                            } else {
-                                return { id: u.id || 'unknown', name: u.id || 'unknown' };
-                            }
-                        }).filter(p => p.id !== myId);
-                    } else {
-                        peers = [];
+                        peers = msg.users.map(u => typeof u === 'string' ? { id: u, name: u } : u).filter(p => p.id !== myId);
                     }
-                    log('Users online: ' + peers.length);
                     renderPeers();
                     break;
                     
@@ -275,47 +120,49 @@
                     if (callState === CallState.IDLE) {
                         callId = msg.call_id;
                         callPeerId = msg.from;
-                        callState = CallState.RINGING;
-                        document.getElementById('incoming-caller').textContent = msg.from_name || msg.from;
-                        showScreen('incoming-screen');
+                        incomingOffer = msg.payload?.sdp || msg.sdp;
+                        updateStatus(CallState.RINGING);
+                        document.getElementById('status').textContent = 'Incoming from ' + (msg.from_name || msg.from);
                         log('Incoming call from ' + (msg.from_name || msg.from), 'warn');
-                        // Auto-answer for demo
-                        setTimeout(() => acceptCall(), 2000);
+                        renderPeers();
                     }
                     break;
                     
                 case 'CALL_ACCEPT':
                     if (callState === CallState.INVITING) {
-                        pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
-                        callState = CallState.ACTIVE;
-                        showScreen('active-screen');
+                        updateStatus(CallState.CONNECTING);
+                        if (pc && msg.payload?.sdp) {
+                            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+                        }
+                        updateStatus(CallState.ACTIVE);
                         log('Call connected!', 'success');
                     }
-                    break;
-                    
-                case 'CALL_RINGING':
-                    log('Ringing...');
-                    break;
-                    
-                case 'ICE_CANDIDATE':
-                    if (pc && msg.payload) {
-                        await pc.addIceCandidate(new RTCIceCandidate(msg.payload));
-                    }
-                    break;
-                    
-                case 'CALL_END':
-                    endCall();
                     break;
                     
                 case 'CALL_REJECT':
                     log('Call rejected', 'error');
                     endCall();
                     break;
+                    
+                case 'ICE_CANDIDATE':
+                case 'ICE':
+                    if (pc && pc.remoteDescription) {
+                        const candidate = msg.candidate || msg.payload;
+                        if (candidate) {
+                            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                        }
+                    } else {
+                        pendingCandidates.push(msg.candidate || msg.payload);
+                    }
+                    break;
+                    
+                case 'CALL_END':
+                    log('Call ended by remote', 'warn');
+                    endCall();
+                    break;
             }
-            updateDebug();
         }
         
-        // Get user media
         async function getUserMedia() {
             try {
                 localStream = await navigator.mediaDevices.getUserMedia({
@@ -327,40 +174,24 @@
             }
         }
         
-        // Refresh peer list via HTTP (fallback)
-        async function refreshPeers() {
-            try {
-                const r = await fetch(SERVER + '/nodes');
-                const contentType = r.headers.get('content-type');
-                if (!contentType || !contentType.includes('application/json')) {
-                    log('Server error: ' + r.status, 'error');
-                    return;
-                }
-                const data = await r.json();
-                peers = data.filter(p => p.id !== myId);
-                renderPeers();
-            } catch(e) {
-                log('Refresh failed: ' + e.message, 'error');
-            }
-        }
-        
-        // Render peers
         function renderPeers() {
             const el = document.getElementById('peers');
             if (peers.length === 0) {
-                el.innerHTML = '<div style="color: var(--muted); padding: 20px; text-align: center;">No contacts online</div>';
+                el.innerHTML = '<div style="color: var(--muted); padding: 20px;">No contacts online</div>';
                 return;
             }
             el.innerHTML = peers.map(p => 
                 '<div class="peer">' +
-                    '<div><div class="peer-name">' + (p.name || p.id) + '</div>' +
-                    '<div style="color: var(--muted); font-size: 0.75rem;">' + (p.ip || 'N/A') + '</div></div>' +
+                    '<div><div class="peer-name">' + (p.name || p.id) + '</div></div>' +
                     '<button class="btn btn-call" style="width: auto; padding: 8px 16px;" onclick="makeCall(\'' + p.id + '\')">Call</button>' +
                 '</div>'
             ).join('');
         }
         
-        // Make a call
+        async function refreshPeers() {
+            ws.send(JSON.stringify({ type: 'GET_USERS' }));
+        }
+        
         async function makeCall(peerId) {
             if (callState !== CallState.IDLE) return;
             
@@ -368,27 +199,20 @@
             callPeerId = peerId;
             const peer = peers.find(p => p.id === peerId);
             
+            updateStatus(CallState.INVITING);
+            log('Calling ' + (peer?.name || peerId));
+            
             pc = new RTCPeerConnection(rtcConfig);
             
-            // Log connection states
-            pc.onconnectionstatechange = () => {
-                console.log('[WebRTC] Connection:', pc.connectionState);
-            };
-            pc.oniceconnectionstatechange = () => {
-                console.log('[WebRTC] ICE:', pc.iceConnectionState);
-            };
-            callState = CallState.INVITING;
-            
-            const peerInfo = peers.find(p => p.id === peerId);
-            document.getElementById('outgoing-callee').textContent = peerInfo?.name || peerId;
-            showScreen('outgoing-screen');
-            log('Calling ' + (peerInfo?.name || peerId));
+            pc.oniceconnectionstatechange = () => log('[ICE] ' + pc.iceConnectionState);
+            pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
             
             pc.onicecandidate = (e) => {
                 if (e.candidate && ws && ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: peerId, call_id: callId, candidate: e.candidate }));
+                    ws.send(JSON.stringify({ type: 'ICE', to: peerId, call_id: callId, candidate: e.candidate }));
                 }
             };
+            
             pc.ontrack = (e) => {
                 const audio = document.createElement('audio');
                 audio.srcObject = e.streams[0];
@@ -397,42 +221,40 @@
                 document.body.appendChild(audio);
             };
             
-            // Add local tracks
             if (localStream) {
                 localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
             }
             
-            // Create offer
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
             
-            // Send via WebSocket
-            if (ws && ws.readyState === 1) {
-                ws.send(JSON.stringify({
-                    type: 'CALL_INVITE',
-                    to: peerId,
-                    call_id: callId,
-                    payload: { sdp: pc.localDescription }
-                }));
-            }
-            
-            updateDebug();
+            ws.send(JSON.stringify({
+                type: 'CALL_INVITE',
+                to: peerId,
+                call_id: callId,
+                payload: { sdp: pc.localDescription }
+            }));
         }
         
-        // Accept call
         async function acceptCall() {
-            if (!callPeerId) return;
+            if (!callPeerId || !incomingOffer) return;
             
             pc = new RTCPeerConnection(rtcConfig);
+            
+            pc.oniceconnectionstatechange = () => log('[ICE] ' + pc.iceConnectionState);
+            pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
+            
             pc.onicecandidate = (e) => {
                 if (e.candidate && ws && ws.readyState === 1) {
-                    ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: callPeerId, call_id: callId, payload: e.candidate }));
+                    ws.send(JSON.stringify({ type: 'ICE', to: callPeerId, call_id: callId, candidate: e.candidate }));
                 }
             };
+            
             pc.ontrack = (e) => {
                 const audio = document.createElement('audio');
                 audio.srcObject = e.streams[0];
                 audio.autoplay = true;
+                audio.controls = true;
                 document.body.appendChild(audio);
             };
             
@@ -440,7 +262,16 @@
                 localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
             }
             
-            // For simplicity, auto-accept the call
+            updateStatus(CallState.CONNECTING);
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+            
+            // Add buffered candidates
+            for (const c of pendingCandidates) {
+                await pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+            pendingCandidates = [];
+            
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
             
@@ -451,43 +282,32 @@
                 payload: { sdp: pc.localDescription }
             }));
             
-            callState = CallState.ACTIVE;
-            document.getElementById('call-peer').textContent = callPeerId;
-            showScreen('active-screen');
+            updateStatus(CallState.ACTIVE);
             log('Call answered', 'success');
-            updateDebug();
         }
         
-        // Reject call
         function rejectCall() {
+            if (!callPeerId) return;
             ws.send(JSON.stringify({ type: 'CALL_REJECT', to: callPeerId, call_id: callId }));
             endCall();
         }
         
-        // End call
         function endCall() {
             if (pc) { pc.close(); pc = null; }
-            if (ws && ws.readyState === 1) {
+            if (ws && ws.readyState === 1 && callPeerId) {
                 ws.send(JSON.stringify({ type: 'CALL_END', to: callPeerId, call_id: callId }));
             }
             callState = CallState.IDLE;
             callId = '';
             callPeerId = '';
-            showScreen('main-screen');
+            incomingOffer = null;
+            pendingCandidates = [];
+            updateStatus(CallState.IDLE);
+            renderPeers();
             log('Call ended');
-            updateDebug();
         }
         
-        // Screen navigation
-        function showScreen(id) {
-            document.querySelectorAll('.call-screen').forEach(s => s.classList.remove('active'));
-            document.getElementById(id + '-screen')?.classList.add('active');
-        }
-        
-        // Init
-        connectWS();
-        setInterval(updateDebug, 1000);
-        document.getElementById('my-name').textContent = myName;
+        connect();
     </script>
 </body>
 </html>

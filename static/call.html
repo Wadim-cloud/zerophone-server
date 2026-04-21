@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ZeroPhone — Call</title>
+    <title>ZeroPhone — Voice Call</title>
     <meta charset="UTF-8">
     <style>
         :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; }
@@ -24,7 +24,8 @@
 </head>
 <body>
     <div class="container">
-        <h1>📞 ZeroPhone Call</h1>
+        <h1>📞 ZeroPhone</h1>
+        <div id="my-name" style="color: var(--accent); margin-bottom: 20px;">Loading...</div>
 
         <div id="status" class="status idle">Not connected</div>
 
@@ -34,179 +35,278 @@
     </div>
 
     <script>
-        const SERVER = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host;
+        const SERVER = location.origin;
+        const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/';
+        
+        // State
         let ws = null;
         let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
-        let state = 'idle';
+        let myName = localStorage.getItem('zerophone_name') || prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
+        if (myName) localStorage.setItem('zerophone_name', myName);
+        let peers = [];
+        let callState = 'idle';
+        let callId = '';
+        let callPeerId = '';
         let pc = null;
         let localStream = null;
-
+        let incomingOffer = null;
+        let pendingCandidates = [];
+        
+        // Call states
+        const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
+        
+        // WebRTC config with STUN/TURN
         const rtcConfig = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
                 { urls: 'stun:stun1.l.google.com:19302' },
                 { urls: 'stun:stun2.l.google.com:19302' },
-                { 
-                    urls: 'turn:turn.wadiem.cloudns.be:3478',
-                    username: 'zerophone',
-                    credential: 'secretpassword'
-                }
+                { urls: 'turn:turn.wadiem.cloudns.be:3478', username: 'zerophone', credential: 'zerophone123' }
             ]
         };
-
-        // Call state machine
-        const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
-
-        function log(msg) {
-            document.getElementById('log').innerHTML = '[' + new Date().toLocaleTimeString() + '] ' + msg + '<br>' + document.getElementById('log').innerHTML;
+        
+        function log(msg, type = 'info') {
+            const el = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry ' + type;
+            entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
+            el.insertBefore(entry, el.firstChild);
         }
-
+        
+        function updateStatus(s) {
+            callState = s;
+            const el = document.getElementById('status');
+            el.className = 'status ' + s;
+            const texts = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming...', connecting: 'Connecting...', active: 'In Call' };
+            el.textContent = texts[s] || s;
+        }
+        
         function connect() {
-            ws = new WebSocket(SERVER + '/ws/' + myId);
-
+            ws = new WebSocket(WS_URL + myId);
+            
             ws.onopen = () => {
-                log('Connected as ' + myId);
+                log('Connected as ' + myName, 'success');
+                document.getElementById('my-name').textContent = myName;
                 updateStatus(CallState.IDLE);
-                loadPeers();
                 getUserMedia();
+                refreshPeers();
             };
-
+            
             ws.onmessage = async (e) => {
                 const msg = JSON.parse(e.data);
-                handleMessage(msg);
+                log('[WS] ' + msg.type, 'info');
+                await handleMessage(msg);
             };
-
+            
             ws.onclose = () => {
-                log('Disconnected');
+                log('Disconnected, reconnecting...', 'error');
                 updateStatus(CallState.IDLE);
                 setTimeout(connect, 3000);
             };
-
-            ws.onerror = (e) => log('Error: ' + e);
+            
+            ws.onerror = (e) => log('Error: ' + e, 'error');
         }
-
-        function handleMessage(msg) {
+        
+        async function handleMessage(msg) {
             switch(msg.type) {
+                case 'USERS':
+                    if (Array.isArray(msg.users)) {
+                        peers = msg.users.map(u => typeof u === 'string' ? { id: u, name: u } : u).filter(p => p.id !== myId);
+                    }
+                    renderPeers();
+                    break;
+                    
                 case 'CALL_INVITE':
-                    if (state === CallState.IDLE) {
-                        state = CallState.RINGING;
+                    if (callState === CallState.IDLE) {
+                        callId = msg.call_id;
+                        callPeerId = msg.from;
+                        incomingOffer = msg.payload?.sdp || msg.sdp;
                         updateStatus(CallState.RINGING);
-                        log('Incoming call from ' + msg.from);
-                        // Auto-answer for demo, or prompt user
-                        acceptCall(msg);
+                        document.getElementById('status').textContent = 'Incoming from ' + (msg.from_name || msg.from);
+                        log('Incoming call from ' + (msg.from_name || msg.from), 'warn');
+                        renderPeers();
                     }
                     break;
+                    
                 case 'CALL_ACCEPT':
-                    if (state === CallState.INVITING) {
-                        state = CallState.CONNECTING;
+                    if (callState === CallState.INVITING) {
                         updateStatus(CallState.CONNECTING);
-                        pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
-                        log('Call accepted');
-                        state = CallState.ACTIVE;
+                        if (pc && msg.payload?.sdp) {
+                            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+                        }
                         updateStatus(CallState.ACTIVE);
+                        log('Call connected!', 'success');
                     }
                     break;
-                case 'CALL_RINGING':
-                    log('Ringing...');
-                    break;
-                case 'ICE_CANDIDATE':
-                    if (pc) pc.addIceCandidate(new RTCIceCandidate(msg.payload));
-                    break;
-                case 'CALL_END':
+                    
+                case 'CALL_REJECT':
+                    log('Call rejected', 'error');
                     endCall();
                     break;
-                case 'USERS':
-                    renderPeers(msg.users);
+                    
+                case 'ICE_CANDIDATE':
+                case 'ICE':
+                    if (pc && pc.remoteDescription) {
+                        const candidate = msg.candidate || msg.payload;
+                        if (candidate) {
+                            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                        }
+                    } else {
+                        pendingCandidates.push(msg.candidate || msg.payload);
+                    }
+                    break;
+                    
+                case 'CALL_END':
+                    log('Call ended by remote', 'warn');
+                    endCall();
                     break;
             }
         }
-
-        // WebRTC call flow
-        async function makeCall(toId) {
-            state = CallState.INVITING;
-            updateStatus(CallState.INVITING);
-
-            pc = new RTCPeerConnection(rtcConfig);
-            pc.onicecandidate = (e) => {
-                if (e.candidate) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: toId, payload: e.candidate }));
-            };
-            pc.ontrack = (e) => {
-                document.body.appendChild(document.createElement('audio')).srcObject = e.streams[0];
-            };
-
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-
-            ws.send(JSON.stringify({
-                type: 'CALL_INVITE',
-                to: toId,
-                payload: { sdp: pc.localDescription }
-            }));
-
-            log('Calling ' + toId);
-        }
-
-        async function acceptCall(inviteMsg) {
-            pc = new RTCPeerConnection(rtcConfig);
-            pc.onicecandidate = (e) => {
-                if (e.candidate) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: inviteMsg.from, payload: e.candidate }));
-            };
-            pc.ontrack = (e) => {
-                document.body.appendChild(document.createElement('audio')).srcObject = e.streams[0];
-            };
-
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-
-            await pc.setRemoteDescription(new RTCSessionDescription(inviteMsg.payload.sdp));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-
-            ws.send(JSON.stringify({
-                type: 'CALL_ACCEPT',
-                to: inviteMsg.from,
-                payload: { sdp: pc.localDescription }
-            }));
-
-            state = CallState.ACTIVE;
-            updateStatus(CallState.ACTIVE);
-            log('Call connected');
-        }
-
-        function endCall() {
-            if (pc) pc.close();
-            if (localStream) localStream.getTracks().forEach(t => t.stop());
-            state = CallState.IDLE;
-            updateStatus(CallState.IDLE);
-            log('Call ended');
-        }
-
+        
         async function getUserMedia() {
-            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+            try {
+                localStream = await navigator.mediaDevices.getUserMedia({
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+                });
+                log('Microphone ready', 'success');
+            } catch(e) {
+                log('Mic error: ' + e.message, 'error');
+            }
         }
-
-        function loadPeers() {
-            ws.send(JSON.stringify({ type: 'GET_USERS' }));
-        }
-
-        function renderPeers(users) {
-            const div = document.getElementById('peers');
-            div.innerHTML = users.map(u =>
-                `<div class="peer">
-                    <span class="peer-name">${u.name}</span>
-                    <button class="btn" onclick="makeCall('${u.id}')">Call</button>
-                </div>`
+        
+        function renderPeers() {
+            const el = document.getElementById('peers');
+            if (peers.length === 0) {
+                el.innerHTML = '<div style="color: var(--muted); padding: 20px;">No contacts online</div>';
+                return;
+            }
+            el.innerHTML = peers.map(p => 
+                '<div class="peer">' +
+                    '<div><div class="peer-name">' + (p.name || p.id) + '</div></div>' +
+                    '<button class="btn btn-call" style="width: auto; padding: 8px 16px;" onclick="makeCall(\'' + p.id + '\')">Call</button>' +
+                '</div>'
             ).join('');
         }
-
-        function updateStatus(s) {
-            state = s;
-            const el = document.getElementById('status');
-            el.className = 'status ' + s;
-            el.textContent = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming...', connecting: 'Connecting...', active: 'In Call' }[s];
+        
+        async function refreshPeers() {
+            ws.send(JSON.stringify({ type: 'GET_USERS' }));
         }
-
+        
+        async function makeCall(peerId) {
+            if (callState !== CallState.IDLE) return;
+            
+            callId = 'call-' + Date.now();
+            callPeerId = peerId;
+            const peer = peers.find(p => p.id === peerId);
+            
+            updateStatus(CallState.INVITING);
+            log('Calling ' + (peer?.name || peerId));
+            
+            pc = new RTCPeerConnection(rtcConfig);
+            
+            pc.oniceconnectionstatechange = () => log('[ICE] ' + pc.iceConnectionState);
+            pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
+            
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'ICE', to: peerId, call_id: callId, candidate: e.candidate }));
+                }
+            };
+            
+            pc.ontrack = (e) => {
+                const audio = document.createElement('audio');
+                audio.srcObject = e.streams[0];
+                audio.autoplay = true;
+                audio.controls = true;
+                document.body.appendChild(audio);
+            };
+            
+            if (localStream) {
+                localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            }
+            
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            
+            ws.send(JSON.stringify({
+                type: 'CALL_INVITE',
+                to: peerId,
+                call_id: callId,
+                payload: { sdp: pc.localDescription }
+            }));
+        }
+        
+        async function acceptCall() {
+            if (!callPeerId || !incomingOffer) return;
+            
+            pc = new RTCPeerConnection(rtcConfig);
+            
+            pc.oniceconnectionstatechange = () => log('[ICE] ' + pc.iceConnectionState);
+            pc.onconnectionstatechange = () => log('[WebRTC] ' + pc.connectionState);
+            
+            pc.onicecandidate = (e) => {
+                if (e.candidate && ws && ws.readyState === 1) {
+                    ws.send(JSON.stringify({ type: 'ICE', to: callPeerId, call_id: callId, candidate: e.candidate }));
+                }
+            };
+            
+            pc.ontrack = (e) => {
+                const audio = document.createElement('audio');
+                audio.srcObject = e.streams[0];
+                audio.autoplay = true;
+                audio.controls = true;
+                document.body.appendChild(audio);
+            };
+            
+            if (localStream) {
+                localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+            }
+            
+            updateStatus(CallState.CONNECTING);
+            
+            await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+            
+            // Add buffered candidates
+            for (const c of pendingCandidates) {
+                await pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+            pendingCandidates = [];
+            
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            
+            ws.send(JSON.stringify({
+                type: 'CALL_ACCEPT',
+                to: callPeerId,
+                call_id: callId,
+                payload: { sdp: pc.localDescription }
+            }));
+            
+            updateStatus(CallState.ACTIVE);
+            log('Call answered', 'success');
+        }
+        
+        function rejectCall() {
+            if (!callPeerId) return;
+            ws.send(JSON.stringify({ type: 'CALL_REJECT', to: callPeerId, call_id: callId }));
+            endCall();
+        }
+        
+        function endCall() {
+            if (pc) { pc.close(); pc = null; }
+            if (ws && ws.readyState === 1 && callPeerId) {
+                ws.send(JSON.stringify({ type: 'CALL_END', to: callPeerId, call_id: callId }));
+            }
+            callState = CallState.IDLE;
+            callId = '';
+            callPeerId = '';
+            incomingOffer = null;
+            pendingCandidates = [];
+            updateStatus(CallState.IDLE);
+            renderPeers();
+            log('Call ended');
+        }
+        
         connect();
     </script>
 </body>
