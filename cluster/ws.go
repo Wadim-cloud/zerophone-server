@@ -203,52 +203,74 @@ func (c *WSClient) WritePump() {
 }
 
 type VoIPMessage struct {
-	Type   string `json:"type"`
-	CallID string `json:"call_id,omitempty"`
-	From   string `json:"from"`
-	To     string `json:"to,omitempty"`
-	SDP    string `json:"sdp,omitempty"`
-	ICE    string `json:"ice,omitempty"`
-	Code   int    `json:"code,omitempty"`
-	Time   int64  `json:"time"`
+	Type    string          `json:"type"`
+	CallID  string          `json:"call_id,omitempty"`
+	From    string          `json:"from"`
+	To      string          `json:"to,omitempty"`
+	SDP     string          `json:"sdp,omitempty"`
+	ICE     string          `json:"ice,omitempty"`
+	Code    int             `json:"code,omitempty"`
+	Time    int64           `json:"time"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 func HandleVoIPMessage(from string, msg VoIPMessage) {
+	// Parse payload if SDP not at root level
+	if msg.SDP == "" && msg.Payload != nil {
+		var p struct {
+			SDP interface{} `json:"sdp"`
+		}
+		json.Unmarshal(msg.Payload, &p)
+		if sdp, ok := p.SDP.(string); ok {
+			msg.SDP = sdp
+		} else if sdpMap, ok := p.SDP.(map[string]interface{}); ok {
+			// Convert SDP object to JSON string
+			sdpJSON, _ := json.Marshal(sdpMap)
+			msg.SDP = string(sdpJSON)
+		}
+	}
+
 	switch msg.Type {
 	case MsgCallInvite:
 		if _, ok := wsHub.GetClient(msg.To); ok {
 			msg.Type = MsgCallInvite
 			msg.Time = time.Now().Unix()
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
 
 	case MsgCallRing:
 		if _, ok := wsHub.GetClient(msg.To); ok {
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
 
 	case MsgCallAccept:
 		if _, ok := wsHub.GetClient(msg.To); ok {
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
 
 	case MsgCallReject:
 		if _, ok := wsHub.GetClient(msg.To); ok {
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
 
 	case MsgICE:
 		if _, ok := wsHub.GetClient(msg.To); ok {
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
 
 	case MsgCallEnd:
 		if _, ok := wsHub.GetClient(msg.To); ok {
+			msg.From = from
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
