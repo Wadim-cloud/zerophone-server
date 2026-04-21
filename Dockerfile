@@ -13,9 +13,6 @@ RUN go mod download
 
 COPY . .
 
-# Copy certs for HTTPS
-COPY cert.pem key.pem ./
-
 RUN CGO_ENABLED=1 GOOS=linux go build -o zerophone .
 
 FROM alpine:latest
@@ -28,8 +25,6 @@ COPY --from=builder /app/zerophone .
 COPY --from=builder /app/static ./static
 COPY --from=builder /app/cluster ./cluster
 COPY --from=builder /app/main.go ./
-COPY --from=builder /app/cert.pem .
-COPY --from=builder /app/key.pem .
 
 EXPOSE 8080 5555 5556 5557 5558
 
