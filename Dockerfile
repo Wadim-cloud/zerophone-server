@@ -26,8 +26,8 @@ COPY --from=builder /app/static ./static
 COPY --from=builder /app/cluster ./cluster
 COPY --from=builder /app/main.go ./
 
-EXPOSE 8443 5555 5556 5557 5558
+EXPOSE 8080 5555 5556 5557 5558
 
 ENV ZEROPHONE_CLUSTER=1
 
-CMD ["./zerophone", "--addr", ":8443"]
+CMD ["./zerophone", "--addr", ":8080"]

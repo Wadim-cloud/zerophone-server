@@ -181,7 +181,7 @@ func getICEServers() []ICEConfig {
 }
 
 var (
-	addr       = flag.String("addr", ":8443", "http listen address")
+	addr       = flag.String("addr", ":8080", "http listen address")
 	serverURL  = flag.String("server", "", "server URL to connect to")
 	configPort = flag.Int("port", 8081, "cluster port")
 	certFile   = flag.String("cert", "", "TLS certificate file")
