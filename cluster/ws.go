@@ -20,7 +20,11 @@ const (
 	MsgCallEnd    = "CALL_END"
 	MsgGetUsers   = "GET_USERS"
 	MsgUsers      = "USERS"
+	MsgJoin       = "JOIN"
 )
+
+// Client names storage
+var clientNames = make(map[string]string)
 
 const (
 	CallStateIdle       = "IDLE"
@@ -331,20 +335,36 @@ type VoIPMessage struct {
 }
 
 func HandleVoIPMessage(from string, msg VoIPMessage) {
-	log.Printf("[WS] received: %s from=%s to=%s", msg.Type, from, msg.To)
+	log.Printf("[WS] received: %s from=%s", msg.Type, from)
 
-	// ALWAYS respond to GET_USERS with list of all clients
-	if msg.Type == MsgGetUsers || msg.Type == "GET_USERS" {
+	// Handle JOIN - store client name
+	if msg.Type == MsgJoin || msg.Type == "JOIN" {
+		if name := msg.SDP; name != "" {
+			clientNames[from] = name
+			log.Printf("[WS] %s joined as '%s'", from, name)
+		}
+	}
+
+	// ALWAYS respond to GET_USERS with list of all clients with names
+	if msg.Type == MsgGetUsers || msg.Type == "GET_USERS" || msg.Type == MsgJoin || msg.Type == "JOIN" {
 		users := wsHub.GetAllClients()
-		log.Printf("[WS] GET_USERS: sending %d users to %s", len(users), from)
-
-		// Broadcast to ALL clients (including sender)
-		for _, userID := range users {
-			resp := map[string]interface{}{
-				"type":  "USERS",
-				"users": users,
+		userList := make([]map[string]string, len(users))
+		for i, userID := range users {
+			name := userID
+			if n, ok := clientNames[userID]; ok {
+				name = n
 			}
-			data, _ := json.Marshal(resp)
+			userList[i] = map[string]string{"id": userID, "name": name}
+		}
+		log.Printf("[WS] USERS: %d clients to %s", len(users), from)
+
+		// Send to all clients
+		resp := map[string]interface{}{
+			"type":  "USERS",
+			"users": userList,
+		}
+		data, _ := json.Marshal(resp)
+		for _, userID := range users {
 			wsHub.SendTo(userID, data)
 		}
 		return

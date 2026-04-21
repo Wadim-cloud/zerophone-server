@@ -133,7 +133,12 @@
         // State
         let ws = null;
         let myId = localStorage.getItem('zerophone_id');
-        let myName = localStorage.getItem('zerophone_name') || 'user-' + Math.random().toString(36).substr(2,6);
+        // Prompt for name if not set
+        let myName = localStorage.getItem('zerophone_name');
+        if (!myName) {
+            myName = prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
+            if (myName) localStorage.setItem('zerophone_name', myName);
+        }
         let peers = [];
         let callState = 'idle';
         let callId = '';
@@ -212,12 +217,13 @@
             ws = new WebSocket(WS_URL + myId);
             
             ws.onopen = () => {
-                log('WS Connected! ID: ' + myId, 'success');
-                console.log('[WS] Connected, requesting users...');
+                log('WS Connected! I am: ' + myName, 'success');
+                console.log('[WS] Connected as ' + myId + ' (' + myName + ')');
+                document.getElementById('my-name').textContent = myName;
                 updateDebug();
                 getUserMedia();
-                // Request user list via WebSocket
-                ws.send(JSON.stringify({ type: 'GET_USERS' }));
+                // Send JOIN message with our name
+                ws.send(JSON.stringify({ type: 'JOIN', id: myId, name: myName }));
             };
             
             ws.onmessage = async (e) => {
@@ -245,7 +251,15 @@
                 case 'USERS':
                     // Handle both formats: array of strings or array of objects
                     if (Array.isArray(msg.users)) {
-                        peers = msg.users.map(u => typeof u === 'string' ? { id: u, name: u } : u);
+                        peers = msg.users.map(u => {
+                            if (typeof u === 'string') {
+                                return { id: u, name: u };
+                            } else if (u.name) {
+                                return { id: u.id || u.name, name: u.name };
+                            } else {
+                                return { id: u.id || 'unknown', name: u.id || 'unknown' };
+                            }
+                        }).filter(p => p.id !== myId);
                     } else {
                         peers = [];
                     }
