@@ -4,307 +4,308 @@
     <title>ZeroPhone — Voice Call</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
-        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; --warning: #f0883e; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
-        .container { max-width: 500px; margin: 0 auto; text-align: center; }
-        h1 { color: var(--accent); margin-bottom: 10px; }
-        .my-name { color: var(--success); font-size: 1.2rem; margin-bottom: 20px; }
-        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-        .status-bar { padding: 16px; border-radius: 12px; margin-bottom: 16px; font-size: 1.2rem; }
-        .status-bar.idle { border: 2px solid var(--border); color: var(--text); }
-        .status-bar.inviting { border: 2px solid var(--warning); color: var(--warning); background: rgba(240,136,62,0.1); }
-        .status-bar.ringing { border: 2px solid var(--danger); color: var(--danger); background: rgba(248,81,73,0.1); animation: pulse 1s infinite; }
-        .status-bar.connecting { border: 2px solid var(--accent); color: var(--accent); background: rgba(88,166,255,0.1); }
-        .status-bar.active { border: 2px solid var(--success); color: var(--success); background: rgba(63,185,80,0.1); }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
-        .peer { padding: 16px; margin: 8px 0; border-radius: 8px; background: var(--card); display: flex; justify-content: space-between; align-items: center; border: 1px solid var(--border); }
-        .peer-name { font-weight: 600; font-size: 1.1rem; }
-        .btn { background: var(--accent); color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1rem; }
-        .btn:hover { opacity: 0.9; }
-        .btn-call { background: var(--success); }
-        .btn-end { background: var(--danger); }
-        .btn-accept { background: var(--success); padding: 16px 32px; font-size: 1.2rem; }
-        .btn-reject { background: var(--danger); padding: 16px 32px; font-size: 1.2rem; }
-        .log { background: var(--card); border-radius: 8px; padding: 12px; font-size: 0.75rem; max-height: 150px; overflow-y: auto; text-align: left; }
-        .log-entry { margin: 4px 0; color: var(--text); }
-        .log-entry.warn { color: var(--warning); }
-        .log-entry.error { color: var(--danger); }
-        .log-entry.success { color: var(--success); }
-        .hidden { display: none !important; }
-        /* Incoming call overlay */
-        .incoming-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(13,17,23,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-        .incoming-caller { font-size: 2rem; color: var(--danger); margin-bottom: 20px; }
-        .incoming-label { font-size: 1.2rem; color: var(--text); margin-bottom: 40px; }
-        .incoming-buttons { display: flex; gap: 20px; }
-        /* Audio elements kept in body (safe from script parsing) */
-        audio { display: none; }
+        :root {
+            --bg:#0d1117; --card:#161b22; --border:#30363d;
+            --text:#c9d1d9; --accent:#58a6ff;
+            --success:#3fb950; --danger:#f85149;
+            --warning:#f0883e; --muted:#6e7681;
+        }
+
+        * { box-sizing:border-box; margin:0; padding:0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            padding: 20px;
+        }
+
+        .container { max-width: 520px; margin:0 auto; text-align:center; }
+
+        h1 { color:var(--accent); margin-bottom:8px; }
+
+        .status-bar {
+            padding:16px;
+            border-radius:14px;
+            margin:14px 0;
+            border:2px solid var(--border);
+        }
+
+        .card {
+            background: var(--card);
+            border:1px solid var(--border);
+            border-radius:14px;
+            padding:16px;
+            margin:12px 0;
+        }
+
+        .btn {
+            padding:10px 16px;
+            border-radius:10px;
+            border:none;
+            cursor:pointer;
+            background:var(--accent);
+            color:white;
+        }
+
+        .btn-danger { background:var(--danger); }
+        .btn-success { background:var(--success); }
+
+        /* VU meter */
+        .vu {
+            display:flex;
+            justify-content:center;
+            gap:4px;
+            margin:12px 0;
+            height:40px;
+            align-items:flex-end;
+        }
+
+        .bar {
+            width:4px;
+            background:var(--success);
+            height:6px;
+            transition:height 0.08s ease;
+        }
+
+        /* Push to talk */
+        .ptt {
+            margin-top:10px;
+            background: var(--warning);
+        }
+
+        .ptt.active {
+            background: var(--success);
+        }
+
+        /* stats */
+        .stats {
+            font-size:12px;
+            text-align:left;
+            opacity:0.85;
+            margin-top:10px;
+        }
+
+        .hidden { display:none; }
     </style>
 </head>
 
 <body>
-    <div class="container">
-        <h1>📞 ZeroPhone</h1>
-        <div id="my-name" class="my-name">Connecting...</div>
-        
-        <!-- Main screen (idle/inviting) -->
-        <div id="main-screen">
-            <div id="status-bar" class="status-bar idle">Ready</div>
-            
-            <div class="card">
-                <h3 style="margin-bottom: 16px;">Contacts</h3>
-                <div id="peers"></div>
-            </div>
-            
-            <div class="log" id="log"></div>
-        </div>
-        
-        <!-- Incoming call overlay -->
-        <div id="incoming-overlay" class="incoming-overlay hidden">
-            <div class="incoming-caller" id="incoming-caller-name">Unknown</div>
-            <div class="incoming-label">is calling you...</div>
-            <div class="incoming-buttons">
-                <button class="btn btn-accept" onclick="acceptCall()">✅ Answer</button>
-                <button class="btn btn-reject" onclick="rejectCall()">❌ Decline</button>
-            </div>
+<div class="container">
+    <h1>📞 ZeroPhone</h1>
+
+    <div id="status" class="status-bar">Idle</div>
+
+    <div class="card">
+        <div class="vu" id="vu"></div>
+
+        <button class="btn ptt" id="pttBtn">🎙 Hold to Talk</button>
+
+        <button class="btn btn-danger" onclick="endCall()">End Call</button>
+
+        <div class="stats" id="stats">
+            jitter: -- ms<br>
+            packet loss: --%<br>
+            rtt: -- ms
         </div>
     </div>
+</div>
 
-    <script>
-        const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws/';
-        
-        let ws = null;
-        let pc;
-        let localStream = null;
-        let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
-        let myName = localStorage.getItem('zerophone_name') || prompt('Enter your name:', 'User-' + Math.random().toString(36).substr(2,6).toUpperCase());
-        if (myName) localStorage.setItem('zerophone_name', myName);
-        localStorage.setItem('zerophone_id', myId);
-        
-        let peers = [];
-        let callState = 'idle';
-        let callId = '';
-        let callPeerId = '';
-        let localStream = null;
-        let incomingOffer = null;
-        let pendingCandidates = [];
+<script>
+let pc;
+let ws;
+let localStream;
+let audioCtx;
+let analyser;
+let dataArray;
+let micEnabled = false;
+let ptt = false;
+let statsInterval;
 
-        const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
+/* ---------------------------
+   AUDIO: VU METER SETUP
+----------------------------*/
+function setupVU(stream) {
+    audioCtx = new AudioContext();
+    const source = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
 
-        const rtcConfig = {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' },
-                { urls: 'stun:stun2.l.google.com:19302' },
-                { urls: 'turn:turn.wadiem.cloudns.be:3478', username: 'zerophone', credential: 'zerophone123' }
-            ],
-            iceCandidatePoolSize: 10
-        };
-        
-        function log(msg, type = 'info') {
-            const el = document.getElementById('log');
-            const entry = document.createElement('div');
-            entry.className = 'log-entry ' + type;
-            entry.textContent = new Date().toLocaleTimeString() + ' ' + msg;
-            el.insertBefore(entry, el.firstChild);
-            if (el.children.length > 50) el.lastChild.remove();
+    analyser.fftSize = 64;
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    source.connect(analyser);
+
+    const vu = document.getElementById('vu');
+    vu.innerHTML = '';
+
+    for (let i = 0; i < 12; i++) {
+        const b = document.createElement('div');
+        b.className = 'bar';
+        vu.appendChild(b);
+    }
+
+    function draw() {
+        requestAnimationFrame(draw);
+        analyser.getByteFrequencyData(dataArray);
+
+        document.querySelectorAll('.bar').forEach((bar, i) => {
+            const v = dataArray[i] || 0;
+            bar.style.height = (v / 4) + 'px';
+        });
+    }
+
+    draw();
+}
+
+/* ---------------------------
+   OPUS FORCE (BEST EFFORT)
+----------------------------*/
+function forceOpus(pc) {
+    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
+    if (!sender) return;
+
+    const params = sender.getParameters();
+    const caps = RTCRtpSender.getCapabilities('audio');
+
+    if (caps && caps.codecs) {
+        const opus = caps.codecs.filter(c => c.mimeType.toLowerCase().includes('opus'));
+        if (opus.length) {
+            params.codecs = opus;
+            sender.setParameters(params);
         }
+    }
+}
 
-        function updateStatus(s, text) {
-            callState = s;
-            const el = document.getElementById('status-bar');
-            el.className = 'status-bar ' + s;
-            const texts = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming call!', connecting: 'Connecting...', active: 'In Call 📞' };
-            el.textContent = text || texts[s] || s;
+/* ---------------------------
+   PACKET LOSS SIMULATION
+----------------------------*/
+function simulateLoss(stream) {
+    const track = stream.getAudioTracks()[0];
+
+    setInterval(() => {
+        if (!pc || pc.connectionState !== 'connected') return;
+
+        // 10% random drop simulation
+        if (Math.random() < 0.1) {
+            track.enabled = false;
+            setTimeout(() => track.enabled = true, 80);
         }
+    }, 120);
+}
 
-        function showIncomingCall(from) {
-            document.getElementById('incoming-caller-name').textContent = from;
-            document.getElementById('incoming-overlay').classList.remove('hidden');
-            updateStatus(CallState.RINGING, 'Incoming from ' + from);
-        }
+/* ---------------------------
+   STATS (JITTER / LOSS)
+----------------------------*/
+async function startStats() {
+    statsInterval = setInterval(async () => {
+        if (!pc) return;
 
-        function hideIncomingCall() {
-            document.getElementById('incoming-overlay').classList.add('hidden');
-        }
+        const stats = await pc.getStats();
+        let jitter = 0;
+        let packetsLost = 0;
+        let packetsRecv = 0;
+        let rtt = 0;
 
-        function connect() {
-            ws = new WebSocket(WS_URL + myId);
-            ws.onopen = () => {
-                document.getElementById('my-name').textContent = myName + ' ✓';
-                log('Connected as ' + myName, 'success');
-                updateStatus(CallState.IDLE);
-                getUserMedia();
-                ws.send(JSON.stringify({ type: 'GET_USERS' }));
-            };
-            ws.onmessage = async (e) => {
-                const msg = JSON.parse(e.data);
-                log("[WS] " + msg.type);
-                await handleMessage(msg);
-            };
-            ws.onclose = () => {
-                log('Disconnected, reconnecting...', 'error');
-                document.getElementById('my-name').textContent = 'Reconnecting...';
-                updateStatus(CallState.IDLE);
-                setTimeout(connect, 3000);
-            };
-            ws.onerror = () => log('WebSocket error', 'error');
-        }
-
-        async function handleMessage(msg) {
-            switch(msg.type) {
-                case 'USERS':
-                    if (Array.isArray(msg.users)) {
-                        peers = msg.users.map(u => typeof u === 'string' ? { id: u, name: u } : u).filter(p => p.id !== myId);
-                    }
-                    renderPeers();
-                    break;
-                case 'CALL_INVITE':
-                    if (callState === CallState.IDLE) {
-                        callId = msg.call_id;
-                        callPeerId = msg.from;
-                        incomingOffer = msg.payload?.sdp || msg.sdp;
-                        const callerName = msg.from_name || msg.from;
-                        showIncomingCall(callerName);
-                        log('Incoming call from ' + callerName, 'warn');
-                    }
-                    break;
-                case 'CALL_ACCEPT':
-                    if (callState === CallState.INVITING) {
-                        updateStatus(CallState.CONNECTING, 'Connected!');
-                        if (pc && msg.payload?.sdp) {
-                            await pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
-                            for (const c of pendingCandidates) await pc.addIceCandidate(new RTCIceCandidate(c));
-                            pendingCandidates = [];
-                        }
-                        updateStatus(CallState.ACTIVE, 'In Call 📞');
-                        log('Call connected!', 'success');
-                    }
-                    break;
-                case 'ICE':
-                case 'ICE_CANDIDATE':
-                    if (pc && pc.remoteDescription) {
-                        const c = msg.candidate || msg.payload;
-                        if (c) await pc.addIceCandidate(new RTCIceCandidate(c));
-                    } else {
-                        pendingCandidates.push(msg.candidate || msg.payload);
-                    }
-                    break;
-                case 'CALL_END':
-                    log('Call ended by remote', 'warn');
-                    endCall();
-                    break;
+        stats.forEach(report => {
+            if (report.type === 'inbound-rtp') {
+                jitter = report.jitter || 0;
+                packetsLost = report.packetsLost || 0;
+                packetsRecv = report.packetsReceived || 0;
             }
-        }
-
-        async function getUserMedia() {
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-                log('Microphone ready', 'success');
-            } catch(e) {
-                log('Mic error: ' + e.message, 'error');
+            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                rtt = report.currentRoundTripTime || 0;
             }
-        }
+        });
 
-        function renderPeers() {
-            const el = document.getElementById('peers');
-            el.innerHTML = '';
-            if (peers.length === 0) {
-                el.innerHTML = '<div style="color: var(--text); opacity: 0.5; padding: 20px;">No contacts online. Open another tab to test!</div>';
-                return;
-            }
-            peers.map(p => 
-                '<div class="peer">' +
-                    '<div><div class="peer-name">' + (p.name || p.id) + '</div><div class="peer-status">Online</div></div>' +
-                    '<button class="btn btn-call" onclick="callUser(\'' + p.id + '\')"><span style="font-size:1.25rem;">📞</span></button>' +
-                '</div>'
-            ).join('');
-        }
+        const loss = packetsLost + packetsRecv
+            ? (packetsLost / (packetsLost + packetsRecv) * 100).toFixed(1)
+            : 0;
 
-        async function createPeer(target) {
-            pc = new RTCPeerConnection(rtcConfig);
-            pc.onicecandidate = e => { if (e.candidate) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: target, call_id: callId, candidate: e.candidate })); };
-            pc.onconnectionstatechange = () => {
-                log('[PC] ' + pc.connectionState);
-                if (pc.iceConnectionState === 'failed') log('❌ ICE failed → TURN likely required', 'error');
-                if (pc.iceConnectionState === 'connected') log('✅ ICE connected (media flowing)', 'success');
-            };
-            pc.ontrack = e => { const audio = new Audio(); audio.srcObject = e.streams[0]; audio.autoplay = true; };
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-        }
+        document.getElementById('stats').innerHTML =
+            `jitter: ${(jitter*1000).toFixed(1)} ms<br>
+             packet loss: ${loss}%<br>
+             rtt: ${(rtt*1000).toFixed(0)} ms`;
+    }, 1000);
+}
 
-        async function callUser(user) {
-            if (callState !== CallState.IDLE) return;
-            callId = 'call-' + Date.now();
-            callPeerId = user;
-            const peer = peers.find(p => p.id === user);
-            updateStatus(CallState.INVITING, 'Calling ' + (peer?.name || peerId) + '...');
-            log('Calling ' + (peer?.name || peerId));
-            await createPeer(user);
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            ws.send(JSON.stringify({ type: 'CALL_INVITE', to: user, call_id: callId, payload: { sdp: pc.localDescription } }));
-            play('ringback');
-            document.getElementById("hangup").classList.remove("hidden");
-        }
+/* ---------------------------
+   PUSH TO TALK (HALF DUPLEX)
+----------------------------*/
+function setupPTT() {
+    const btn = document.getElementById('pttBtn');
 
-        async function acceptCall() {
-            if (!callPeerId || !incomingOffer) { log('No incoming call', 'error'); return; }
-            hideIncomingCall();
-            updateStatus(CallState.CONNECTING, 'Connecting...');
-            pc = new RTCPeerConnection(rtcConfig);
-            pc.onicecandidate = (e) => { if (e.candidate && ws?.readyState === 1) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: callPeerId, call_id: callId, candidate: e.candidate })); };
-            pc.ontrack = (e) => { const audio = new Audio(); audio.srcObject = e.streams[0]; audio.autoplay = true; };
-            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
-            try {
-                await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
-                for (const c of pendingCandidates) await pc.addIceCandidate(new RTCIceCandidate(c));
-                pendingCandidates = [];
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-                ws.send(JSON.stringify({ type: 'CALL_ACCEPT', to: callPeerId, call_id: callId, payload: { sdp: pc.localDescription } }));
-                play('connect');
-                updateStatus(CallState.ACTIVE, 'In Call 📞');
-                log('Call answered!', 'success');
-            } catch(e) { log('Error answering: ' + e.message, 'error'); }
-        }
+    function enable() {
+        ptt = true;
+        btn.classList.add('active');
+        if (localStream)
+            localStream.getAudioTracks().forEach(t => t.enabled = true);
+    }
 
-        function rejectCall() {
-            if (!callPeerId) return;
-            stop('ringtone');
-            ws.send(JSON.stringify({ type: 'CALL_REJECT', to: callPeerId, call_id: callId }));
-            log('Call declined');
-            endCall();
-        }
+    function disable() {
+        ptt = false;
+        btn.classList.remove('active');
+        if (localStream)
+            localStream.getAudioTracks().forEach(t => t.enabled = false);
+    }
 
-        function endCall() {
-            play('hangup');
-            log('🔚 Ending call');
-            if (pc) { pc.ontrack = null; pc.onicecandidate = null; pc.close(); pc = null; }
-            if (ws?.readyState === 1 && callPeerId) ws.send(JSON.stringify({ type: 'CALL_END', to: callPeerId, call_id: callId }));
-            callPeerId = ''; callId = ''; incomingOffer = null; pendingCandidates = [];
-            if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
-            updateStatus(CallState.IDLE, 'Ready');
-            renderPeers();
-            log('✅ Call fully cleaned');
-        }
+    btn.addEventListener('mousedown', enable);
+    btn.addEventListener('mouseup', disable);
+    btn.addEventListener('touchstart', enable);
+    btn.addEventListener('touchend', disable);
 
-        function play(id) { const a = document.getElementById(id); if (!a) return; a.currentTime = 0; a.play().catch(()=>{}); }
-        function stop(id) { const a = document.getElementById(id); if (a) { a.pause(); a.currentTime = 0; } }
-        function stopAll() { ['ringtone','ringback','connect','hangup'].forEach(stop); }
+    // keyboard push-to-talk
+    window.addEventListener('keydown', e => {
+        if (e.code === 'Space') enable();
+    });
 
-        let isMuted = false;
-        document.addEventListener('click', () => { ['ringtone','ringback','connect','hangup'].forEach(name => { const a = document.getElementById(name); if (a) a.play().then(()=>a.pause()).catch(()=>{}); }); }, { once: true });
+    window.addEventListener('keyup', e => {
+        if (e.code === 'Space') disable();
+    });
+}
 
-        connect();
-    </script>
+/* ---------------------------
+   WEBRTC INIT (SIMPLIFIED)
+----------------------------*/
+async function startCall() {
+    localStream = await navigator.mediaDevices.getUserMedia({ audio:true });
 
-    <!-- Audio elements (relative to page; serve from same folder) -->
-    <audio id="ringtone" src="sounds/ringtone.mp3" loop></audio>
-    <audio id="ringback" src="sounds/ringback.mp3" loop></audio>
-    <audio id="connect" src="sounds/connect.mp3"></audio>
-    <audio id="hangup" src="sounds/hangup.mp3"></audio>
+    setupVU(localStream);
+    simulateLoss(localStream);
+    setupPTT();
 
+    pc = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    });
+
+    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
+    pc.ontrack = e => {
+        const audio = document.createElement('audio');
+        audio.srcObject = e.streams[0];
+        audio.autoplay = true;
+        document.body.appendChild(audio);
+    };
+
+    pc.onconnectionstatechange = () => {
+        document.getElementById('status').innerText = pc.connectionState;
+    };
+
+    forceOpus(pc);
+    startStats();
+}
+
+/* ---------------------------
+   END CALL
+----------------------------*/
+function endCall() {
+    if (pc) pc.close();
+    if (statsInterval) clearInterval(statsInterval);
+    document.getElementById('status').innerText = "Ended";
+}
+
+startCall();
+</script>
 </body>
 </html>
