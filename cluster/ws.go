@@ -94,16 +94,18 @@ func (h *WSHub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.ID] = client
-			// Broadcast new user list to all clients
-			users := h.getUserList()
-			for _, c := range h.clients {
-				select {
-				case c.Send <- []byte(users):
-				default:
-				}
-			}
+			clientCount := len(h.clients)
 			h.mu.Unlock()
-			log.Println("[WS] client connected:", client.ID)
+			log.Printf("[WS] client connected: %s (total: %d)", client.ID, clientCount)
+			// Broadcast new user list to all clients
+			go func() {
+				users := h.getUserList()
+				h.mu.RLock()
+				for _, c := range h.clients {
+					c.Send <- []byte(users)
+				}
+				h.mu.RUnlock()
+			}()
 
 		case client := <-h.unregister:
 			h.mu.Lock()
