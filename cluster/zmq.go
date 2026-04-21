@@ -1,7 +1,9 @@
 package cluster
 
 import (
+	"encoding/json"
 	zmq "github.com/pebbe/zmq4"
+	"log"
 )
 
 const (
@@ -16,6 +18,15 @@ type ZMQMessage struct {
 	FromNode string
 	ToNode   string
 	Payload  map[string]interface{}
+}
+
+type CallRouteMessage struct {
+	Type     string `json:"type"`
+	CallID   string `json:"call_id"`
+	FromNode string `json:"from_node"`
+	ToNode   string `json:"to_node"`
+	SDP      string `json:"sdp,omitempty"`
+	ICE      string `json:"ice,omitempty"`
 }
 
 type NewZMQNodeConnectionConfig struct {
@@ -34,6 +45,111 @@ type ZMQNodeConnection struct {
 	dealerSocket *zmq.Socket
 	ctx          *zmq.Context
 	peers        map[string]string
+}
+
+type ZMQCallRouter struct {
+	nodeID     string
+	router     *zmq.Socket
+	routerAddr string
+	ctx        *zmq.Context
+	routes     map[string]string
+	bind       bool
+}
+
+func NewZMQCallRouter(nodeID string, port int, bind bool) (*ZMQCallRouter, error) {
+	ctx, err := zmq.NewContext()
+	if err != nil {
+		return nil, err
+	}
+
+	router, err := ctx.NewSocket(zmq.ROUTER)
+	if err != nil {
+		ctx.Term()
+		return nil, err
+	}
+
+	addr := "tcp *:5559"
+	if port > 0 {
+		addr = "tcp *:" + string(rune(port+4000))
+	}
+
+	if bind {
+		router.Bind(addr)
+		log.Printf("[ZMQ] ROUTER bound to %s", addr)
+	} else {
+		router.Connect(addr)
+		log.Printf("[ZMQ] ROUTER connected to %s", addr)
+	}
+
+	return &ZMQCallRouter{
+		nodeID:     nodeID,
+		router:     router,
+		routerAddr: addr,
+		ctx:        ctx,
+		routes:     make(map[string]string),
+		bind:       bind,
+	}, nil
+}
+
+func (r *ZMQCallRouter) RegisterRoute(nodeID, remoteAddr string) {
+	r.routes[nodeID] = remoteAddr
+	log.Printf("[ZMQ] Registered route: %s -> %s", nodeID, remoteAddr)
+}
+
+func (r *ZMQCallRouter) RouteCall(msg *CallRouteMessage) error {
+	if r.router == nil {
+		return nil
+	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.router.Send(msg.ToNode, zmq.SNDMORE)
+	if err != nil {
+		return err
+	}
+
+	_, err = r.router.Send(string(data), 0)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[ZMQ] Routed %s call %s from %s to %s", msg.Type, msg.CallID, msg.FromNode, msg.ToNode)
+	return nil
+}
+
+func (r *ZMQCallRouter) ReceiveCall() (*CallRouteMessage, string, error) {
+	if r.router == nil {
+		return nil, "", nil
+	}
+
+	msg, err := r.router.RecvMessage(0)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if len(msg) < 2 {
+		return nil, "", nil
+	}
+
+	fromNode := msg[0]
+	var callMsg CallRouteMessage
+	if err := json.Unmarshal([]byte(msg[1]), &callMsg); err != nil {
+		return nil, fromNode, err
+	}
+
+	return &callMsg, fromNode, nil
+}
+
+func (r *ZMQCallRouter) Close() {
+	if r.router != nil {
+		r.router.Close()
+	}
+	if r.ctx != nil {
+		r.ctx.Term()
+	}
 }
 
 func NewZMQNodeConnection(config NewZMQNodeConnectionConfig) (*ZMQNodeConnection, error) {

@@ -22,13 +22,17 @@ import (
 
 // Call states - proper VoIP states
 const (
-	CallStateNull     = ""
-	CallStateInviting = "INVITING"
-	CallStateRinging  = "RINGING"
-	CallStateAccepted = "ACCEPTED"
-	CallStateReject   = "REJECTED"
-	CallStateBusy     = "BUSY"
-	CallStateEnded    = "ENDED"
+	CallStateNull       = ""
+	CallStateIdle       = "IDLE"
+	CallStateInviting   = "INVITING"
+	CallStateRinging    = "RINGING"
+	CallStateConnecting = "CONNECTING"
+	CallStateActive     = "ACTIVE"
+	CallStateTerminated = "TERMINATED"
+	CallStateAccepted   = "ACCEPTED"
+	CallStateReject     = "REJECTED"
+	CallStateBusy       = "BUSY"
+	CallStateEnded      = "ENDED"
 )
 
 // SIP-like messages
@@ -55,21 +59,33 @@ func NewCallStateMachine() *CallStateMachine {
 	csm.transitions[CallStateNull] = map[string]string{
 		"INVITE": CallStateInviting,
 	}
+	csm.transitions[CallStateIdle] = map[string]string{
+		"INVITE": CallStateInviting,
+	}
 	csm.transitions[CallStateInviting] = map[string]string{
 		"100 TRYING":  CallStateInviting,
 		"180 RINGING": CallStateRinging,
 		"486 BUSY":    CallStateBusy,
 		"REJECT":      CallStateReject,
-		"200 OK":      CallStateAccepted,
-		"BYE":         CallStateEnded,
+		"200 OK":      CallStateConnecting,
+		"BYE":         CallStateTerminated,
 	}
 	csm.transitions[CallStateRinging] = map[string]string{
-		"200 OK": CallStateAccepted,
+		"200 OK": CallStateConnecting,
 		"REJECT": CallStateReject,
-		"BYE":    CallStateEnded,
+		"BYE":    CallStateTerminated,
 	}
-	csm.transitions[CallStateAccepted] = map[string]string{
-		"BYE": CallStateEnded,
+	csm.transitions[CallStateConnecting] = map[string]string{
+		"CONNECT": CallStateActive,
+		"REJECT":  CallStateReject,
+		"BYE":     CallStateTerminated,
+		"TIMEOUT": CallStateTerminated,
+	}
+	csm.transitions[CallStateActive] = map[string]string{
+		"BYE": CallStateTerminated,
+	}
+	csm.transitions[CallStateTerminated] = map[string]string{
+		"INVITE": CallStateInviting,
 	}
 	return csm
 }
@@ -154,6 +170,7 @@ var (
 	keyFile    = flag.String("key", "", "TLS key file")
 
 	clusterModule    *cluster.ClusterModule
+	wsHub            *cluster.WSHub
 	peers            = make(map[string]*Peer)
 	peersMu          sync.RWMutex
 	started          time.Time
@@ -259,8 +276,15 @@ func main() {
 
 	started = time.Now()
 
+	// Set global TLS mode - must be set before routes use it
+	useTLS = (*certFile != "" && *keyFile != "")
+
 	router := mux.NewRouter()
+
+	wsHub = cluster.InitWSHub()
+
 	router.HandleFunc("/", handleIndex)
+	router.HandleFunc("/ws/{user_id}", cluster.HandleWebSocket)
 	router.HandleFunc("/call", handleCall)
 	router.HandleFunc("/call/signal", handleCallSignal)
 	router.HandleFunc("/call/respond", handleCallResponse)
@@ -291,9 +315,11 @@ func main() {
 	router.HandleFunc("/secure", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"secure": false,
-			"tls":    false,
-			"client": isClient,
+			"secure":   useTLS,
+			"tls":      useTLS,
+			"client":   isClient,
+			"tls_cert": *certFile != "",
+			"tls_key":  *keyFile != "",
 		})
 	})
 
@@ -315,9 +341,6 @@ func main() {
 	}
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
-
-	// Set global TLS mode
-	useTLS = (*certFile != "" && *keyFile != "")
 
 	// Start server
 	if useTLS {
