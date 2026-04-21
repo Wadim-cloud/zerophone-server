@@ -353,7 +353,7 @@ func main() {
 		go clientLoop()
 	}
 
-	bindAddr := "0.0.0.0:8080"
+	bindAddr := *addr
 
 	// Check for TLS certificates - use flags or fall back to local cert.pem/key.pem
 	certPath := *certFile
