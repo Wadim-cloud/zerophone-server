@@ -212,13 +212,16 @@
             ws = new WebSocket(WS_URL + myId);
             
             ws.onopen = () => {
-                log('Connected to network', 'success');
+                log('WS Connected! ID: ' + myId, 'success');
+                console.log('[WS] Connected, requesting users...');
                 updateDebug();
                 getUserMedia();
-                refreshPeers();
+                // Request user list via WebSocket
+                ws.send(JSON.stringify({ type: 'GET_USERS' }));
             };
             
             ws.onmessage = async (e) => {
+                console.log('[WS] Raw message:', e.data);
                 const msg = JSON.parse(e.data);
                 handleMessage(msg);
             };
@@ -229,7 +232,10 @@
                 setTimeout(connectWS, 3000);
             };
             
-            ws.onerror = (e) => log('WS Error: ' + e, 'error');
+            ws.onerror = (e) => {
+                console.log('[WS] Error:', e);
+                log('WS Error: ' + e, 'error');
+            };
         }
         
         // Handle incoming WebSocket messages
