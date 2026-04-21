@@ -333,9 +333,22 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 	log.Printf("[WS] %s from %s to %s call=%s", msg.Type, from, msg.To, msg.CallID)
 
 	// Handle GET_USERS first - special case
+	if msg.Type == MsgGetUsers {
+		users := wsHub.GetAllClients()
+		log.Printf("[WS] MATCHED! Sending USERS list to %s: %v", from, users)
+		usersMsg := map[string]interface{}{
+			"type":  MsgUsers,
+			"users": users,
+		}
+		data, _ := json.Marshal(usersMsg)
+		wsHub.SendTo(from, data)
+		return
+	}
+
+	// Also try string literal
 	if msg.Type == "GET_USERS" {
 		users := wsHub.GetAllClients()
-		log.Printf("[WS] Sending USERS list to %s: %v", from, users)
+		log.Printf("[WS] MATCHED STRING! Sending USERS list to %s: %v", from, users)
 		usersMsg := map[string]interface{}{
 			"type":  "USERS",
 			"users": users,
