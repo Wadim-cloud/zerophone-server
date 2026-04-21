@@ -18,6 +18,8 @@ const (
 	MsgCallReject = "CALL_REJECT"
 	MsgICE        = "ICE_CANDIDATE"
 	MsgCallEnd    = "CALL_END"
+	MsgGetUsers   = "GET_USERS"
+	MsgUsers      = "USERS"
 )
 
 const (
@@ -112,6 +114,16 @@ func (h *WSHub) GetClient(id string) (*WSClient, bool) {
 	defer h.mu.RUnlock()
 	client, ok := h.clients[id]
 	return client, ok
+}
+
+func (h *WSHub) GetAllClients() []string {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ids := make([]string, 0, len(h.clients))
+	for id := range h.clients {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (h *WSHub) SendTo(nodeID string, msg []byte) bool {
@@ -274,6 +286,19 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 			data, _ := json.Marshal(msg)
 			wsHub.SendTo(msg.To, data)
 		}
+
+	case MsgGetUsers:
+		// Send list of all connected clients
+		users := wsHub.GetAllClients()
+		usersMsg := struct {
+			Type  string   `json:"type"`
+			Users []string `json:"users"`
+		}{
+			Type:  MsgUsers,
+			Users: users,
+		}
+		data, _ := json.Marshal(usersMsg)
+		wsHub.SendTo(from, data)
 	}
 }
 
