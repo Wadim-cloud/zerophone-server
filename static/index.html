@@ -184,12 +184,21 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({name: myName})
-                }).then(r => r.json()).then(d => {
+                }).then(r => {
+                    const contentType = r.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        throw new Error('Server returned error: ' + r.status);
+                    }
+                    return r.json();
+                }).then(d => {
                     myId = d.id;
                     localStorage.setItem('zerophone_id', myId);
                     localStorage.setItem('zerophone_name', myName);
                     document.getElementById('my-name').textContent = myName;
                     connectWS();
+                }).catch(e => {
+                    log('Register failed: ' + e.message, 'error');
+                    setTimeout(connectWS, 5000);
                 });
                 return;
             }
@@ -285,10 +294,17 @@
         async function refreshPeers() {
             try {
                 const r = await fetch(SERVER + '/nodes');
+                const contentType = r.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    log('Server error: ' + r.status, 'error');
+                    return;
+                }
                 const data = await r.json();
                 peers = data.filter(p => p.id !== myId);
                 renderPeers();
-            } catch(e) {}
+            } catch(e) {
+                log('Refresh failed: ' + e.message, 'error');
+            }
         }
         
         // Render peers

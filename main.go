@@ -20,6 +20,24 @@ import (
 	"zerophone/cluster"
 )
 
+// CORS middleware for handling preflight and headers
+func corsMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH, HEAD")
+		w.Header().Set("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization")
+		w.Header().Set("Access-Control-Expose-Headers", "Content-Length,Content-Range")
+		w.Header().Set("Access-Control-Max-Age", "1728000")
+
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		h.ServeHTTP(w, r)
+	})
+}
+
 // Call states - proper VoIP states
 const (
 	CallStateNull       = ""
@@ -278,6 +296,9 @@ func main() {
 
 	router := mux.NewRouter()
 
+	// Wrap with CORS middleware
+	handler := corsMiddleware(router)
+
 	wsHub = cluster.InitWSHub()
 
 	router.HandleFunc("/", handleIndex)
@@ -353,7 +374,7 @@ func main() {
 	if useTLS {
 		server := &http.Server{
 			Addr:    bindAddr,
-			Handler: router,
+			Handler: handler,
 			TLSConfig: &tls.Config{
 				MinVersion: tls.VersionTLS12,
 			},
@@ -362,7 +383,7 @@ func main() {
 		log.Fatal(server.ListenAndServeTLS(certPath, keyPath))
 	} else {
 		log.Printf("HTTP mode (no certificates found)")
-		log.Fatal(http.ListenAndServe(bindAddr, router))
+		log.Fatal(http.ListenAndServe(bindAddr, handler))
 	}
 }
 
