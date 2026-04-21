@@ -94,6 +94,14 @@ func (h *WSHub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client.ID] = client
+			// Broadcast new user list to all clients
+			users := h.getUserList()
+			for _, c := range h.clients {
+				select {
+				case c.Send <- []byte(users):
+				default:
+				}
+			}
 			h.mu.Unlock()
 			log.Println("[WS] client connected:", client.ID)
 
@@ -144,6 +152,20 @@ func (h *WSHub) GetAllClients() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+func (h *WSHub) getUserList() string {
+	h.mu.RLock()
+	clients := make([]map[string]string, 0, len(h.clients))
+	for id := range h.clients {
+		clients = append(clients, map[string]string{"id": id, "name": id})
+	}
+	h.mu.RUnlock()
+	data, _ := json.Marshal(map[string]interface{}{
+		"type":  MsgUsers,
+		"users": clients,
+	})
+	return string(data)
 }
 
 // Call Session Management
