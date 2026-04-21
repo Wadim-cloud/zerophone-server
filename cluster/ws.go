@@ -424,8 +424,8 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 		}
 
 	case MsgGetUsers:
-		// Existing code
 		users := wsHub.GetAllClients()
+		log.Printf("[WS] Sending USERS list to %s: %v", from, users)
 		usersMsg := struct {
 			Type  string   `json:"type"`
 			Users []string `json:"users"`
