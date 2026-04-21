@@ -27,7 +27,6 @@ WORKDIR /app
 COPY --from=builder /app/zerophone .
 COPY --from=builder /app/static ./static
 COPY --from=builder /app/cluster ./cluster
-COPY --from=builder /app/cluster_lib ./cluster_lib
 COPY --from=builder /app/main.go ./
 COPY --from=builder /app/cert.pem .
 COPY --from=builder /app/key.pem .
