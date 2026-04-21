@@ -9,17 +9,5 @@ services:
     environment:
       - ZEROPHONE_CLUSTER=1
 
-  zerophone-node:
-    build: .
-    network_mode: host
-    volumes:
-      - zerophone-node-data:/data
-    command: ["./zerophone", "--addr", ":8080"]
-    environment:
-      - ZEROPHONE_CLUSTER=1
-    depends_on:
-      - zerophone
-
 volumes:
   zerophone-data:
-  zerophone-node-data:
