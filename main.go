@@ -336,8 +336,8 @@ func main() {
 	}
 
 	bindAddr := *addr
-	if localIP != "" && *addr == ":8080" {
-		bindAddr = net.JoinHostPort(localIP, "8080")
+	if *addr == ":8080" {
+		bindAddr = "0.0.0.0:8080"
 	}
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
