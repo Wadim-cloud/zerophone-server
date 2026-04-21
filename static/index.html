@@ -234,9 +234,11 @@
         
         // Handle incoming WebSocket messages
         async function handleMessage(msg) {
+            console.log('[WS] received:', msg.type, msg);
             switch(msg.type) {
                 case 'USERS':
                     peers = msg.users || [];
+                    log('Users online: ' + peers.length);
                     renderPeers();
                     break;
                     
