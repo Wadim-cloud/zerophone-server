@@ -34,7 +34,7 @@
     </div>
 
     <script>
-        const SERVER = window.location.origin.replace('http', 'ws');
+        const SERVER = (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host;
         let ws = null;
         let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
         let state = 'idle';
