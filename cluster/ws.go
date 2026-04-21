@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -332,137 +331,34 @@ type VoIPMessage struct {
 }
 
 func HandleVoIPMessage(from string, msg VoIPMessage) {
-	log.Printf("[WS] %s from %s to %s call=%s", msg.Type, from, msg.To, msg.CallID)
+	log.Printf("[WS] received: %s from=%s to=%s", msg.Type, from, msg.To)
 
-	// Handle GET_USERS first - special case
-	if msg.Type == MsgGetUsers {
+	// ALWAYS respond to GET_USERS with list of all clients
+	if msg.Type == MsgGetUsers || msg.Type == "GET_USERS" {
 		users := wsHub.GetAllClients()
-		log.Printf("[WS] MATCHED! Sending USERS list to %s: %v", from, users)
-		usersMsg := map[string]interface{}{
-			"type":  MsgUsers,
-			"users": users,
-		}
-		data, _ := json.Marshal(usersMsg)
-		wsHub.SendTo(from, data)
-		return
-	}
+		log.Printf("[WS] GET_USERS: sending %d users to %s", len(users), from)
 
-	// Also try string literal
-	if msg.Type == "GET_USERS" {
-		users := wsHub.GetAllClients()
-		log.Printf("[WS] MATCHED STRING! Sending USERS list to %s: %v", from, users)
-		usersMsg := map[string]interface{}{
-			"type":  "USERS",
-			"users": users,
-		}
-		data, _ := json.Marshal(usersMsg)
-		wsHub.SendTo(from, data)
-		return
-	}
-
-	// Parse payload if SDP not at root level
-	if msg.SDP == "" && msg.Payload != nil {
-		var p struct {
-			SDP interface{} `json:"sdp"`
-		}
-		json.Unmarshal(msg.Payload, &p)
-		if sdp, ok := p.SDP.(string); ok {
-			msg.SDP = sdp
-		} else if sdpMap, ok := p.SDP.(map[string]interface{}); ok {
-			// Convert SDP object to JSON string
-			sdpJSON, _ := json.Marshal(sdpMap)
-			msg.SDP = string(sdpJSON)
-		}
-	}
-
-	switch msg.Type {
-	case MsgCallInvite:
-		// Create call session
-		if msg.CallID == "" {
-			msg.CallID = fmt.Sprintf("call-%d", time.Now().UnixNano())
-		}
-		CreateCallSession(msg.CallID, from, msg.To)
-
-		if _, ok := wsHub.GetClient(msg.To); ok {
-			msg.Type = MsgCallInvite
-			msg.Time = time.Now().Unix()
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			log.Printf("[CALL] Forwarding INVITE to %s", msg.To)
-			if !wsHub.SendTo(msg.To, data) {
-				log.Printf("[CALL] Failed to send to %s", msg.To)
-				UpdateCallState(msg.CallID, CallStateTerminated)
-				return
+		// Broadcast to ALL clients (including sender)
+		for _, userID := range users {
+			resp := map[string]interface{}{
+				"type":  "USERS",
+				"users": users,
 			}
-			UpdateCallState(msg.CallID, CallStateRinging)
-		} else {
-			log.Printf("[CALL] Callee %s not connected", msg.To)
-			UpdateCallState(msg.CallID, CallStateTerminated)
+			data, _ := json.Marshal(resp)
+			wsHub.SendTo(userID, data)
 		}
 		return
+	}
 
-	case MsgCallAccept:
-		session := GetCallSession(msg.CallID)
-		if session == nil {
-			log.Printf("[CALL] No session for %s", msg.CallID)
-			return
-		}
-		UpdateCallState(msg.CallID, CallStateConnecting)
-		msg.From = from
+	// For all other messages, relay to 'to' if specified
+	if msg.To != "" {
+		msg.From = from // set sender
 		data, _ := json.Marshal(msg)
-		if wsHub.SendTo(session.Caller, data) {
-			log.Printf("[CALL] Call accepted, forwarded to %s", session.Caller)
-		}
-
-	case MsgCallReject:
-		session := GetCallSession(msg.CallID)
-		if session != nil {
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			wsHub.SendTo(session.Caller, data)
-			UpdateCallState(msg.CallID, CallStateTerminated)
-		}
-
-	case MsgICE:
-		// Buffer ICE if peer not ready, otherwise forward
-		if _, ok := wsHub.GetClient(msg.To); ok {
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			if !wsHub.SendTo(msg.To, data) {
-				BufferICE(msg.CallID, msg.ICE)
-			}
+		if wsHub.SendTo(msg.To, data) {
+			log.Printf("[WS] relayed %s to %s", msg.Type, msg.To)
 		} else {
-			if msg.CallID != "" && msg.ICE != "" {
-				BufferICE(msg.CallID, msg.ICE)
-			}
+			log.Printf("[WS] failed to send to %s", msg.To)
 		}
-
-	case MsgCallEnd:
-		session := GetCallSession(msg.CallID)
-		if session != nil {
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			if session.Caller != from {
-				wsHub.SendTo(session.Caller, data)
-			}
-			if session.Callee != from {
-				wsHub.SendTo(session.Callee, data)
-			}
-			EndCallSession(msg.CallID)
-		}
-
-	case MsgGetUsers:
-		users := wsHub.GetAllClients()
-		log.Printf("[WS] Sending USERS list to %s: %v", from, users)
-		usersMsg := struct {
-			Type  string   `json:"type"`
-			Users []string `json:"users"`
-		}{
-			Type:  MsgUsers,
-			Users: users,
-		}
-		data, _ := json.Marshal(usersMsg)
-		wsHub.SendTo(from, data)
 	}
 }
 
