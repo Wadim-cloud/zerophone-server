@@ -2,6 +2,7 @@ package cluster
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
@@ -36,6 +37,25 @@ var upgrader = websocket.Upgrader{
 		return true
 	},
 }
+
+// Call Session Manager
+type CallSession struct {
+	CallID    string
+	Caller    string
+	Callee    string
+	State     string
+	SDP       string
+	CreatedAt time.Time
+}
+
+var (
+	callSessions = make(map[string]*CallSession)
+	sessionsMu   sync.RWMutex
+
+	// ICE buffering
+	pendingICE = make(map[string][]string)
+	iceMu      sync.RWMutex
+)
 
 type WSClient struct {
 	ID   string
@@ -124,6 +144,67 @@ func (h *WSHub) GetAllClients() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// Call Session Management
+func CreateCallSession(callID, caller, callee string) *CallSession {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+
+	session := &CallSession{
+		CallID:    callID,
+		Caller:    caller,
+		Callee:    callee,
+		State:     CallStateInviting,
+		CreatedAt: time.Now(),
+	}
+	callSessions[callID] = session
+	log.Printf("[CALL] Created session %s: %s -> %s", callID, caller, callee)
+	return session
+}
+
+func GetCallSession(callID string) *CallSession {
+	sessionsMu.RLock()
+	defer sessionsMu.RUnlock()
+	return callSessions[callID]
+}
+
+func UpdateCallState(callID, state string) {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+	if s, ok := callSessions[callID]; ok {
+		log.Printf("[CALL] Session %s: %s -> %s", callID, s.State, state)
+		s.State = state
+	}
+}
+
+func EndCallSession(callID string) {
+	sessionsMu.Lock()
+	defer sessionsMu.Unlock()
+	if _, ok := callSessions[callID]; ok {
+		log.Printf("[CALL] Ended session %s", callID)
+		delete(callSessions, callID)
+	}
+
+	iceMu.Lock()
+	defer iceMu.Unlock()
+	delete(pendingICE, callID)
+}
+
+// ICE Buffering
+func BufferICE(callID, candidate string) {
+	iceMu.Lock()
+	defer iceMu.Unlock()
+	pendingICE[callID] = append(pendingICE[callID], candidate)
+	log.Printf("[ICE] Buffered candidate for %s", callID)
+}
+
+func GetBufferedICE(callID string) []string {
+	iceMu.Lock()
+	defer iceMu.Unlock()
+	candidates := pendingICE[callID]
+	delete(pendingICE, callID)
+	return candidates
 }
 
 func (h *WSHub) SendTo(nodeID string, msg []byte) bool {
@@ -227,6 +308,8 @@ type VoIPMessage struct {
 }
 
 func HandleVoIPMessage(from string, msg VoIPMessage) {
+	log.Printf("[WS] %s from %s to %s call=%s", msg.Type, from, msg.To, msg.CallID)
+
 	// Parse payload if SDP not at root level
 	if msg.SDP == "" && msg.Payload != nil {
 		var p struct {
@@ -244,51 +327,82 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 
 	switch msg.Type {
 	case MsgCallInvite:
+		// Create call session
+		if msg.CallID == "" {
+			msg.CallID = fmt.Sprintf("call-%d", time.Now().UnixNano())
+		}
+		CreateCallSession(msg.CallID, from, msg.To)
+
 		if _, ok := wsHub.GetClient(msg.To); ok {
 			msg.Type = MsgCallInvite
 			msg.Time = time.Now().Unix()
 			msg.From = from
 			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
+			log.Printf("[CALL] Forwarding INVITE to %s", msg.To)
+			if !wsHub.SendTo(msg.To, data) {
+				log.Printf("[CALL] Failed to send to %s", msg.To)
+				UpdateCallState(msg.CallID, CallStateTerminated)
+				return
+			}
+			UpdateCallState(msg.CallID, CallStateRinging)
+		} else {
+			log.Printf("[CALL] Callee %s not connected", msg.To)
+			UpdateCallState(msg.CallID, CallStateTerminated)
 		}
-
-	case MsgCallRing:
-		if _, ok := wsHub.GetClient(msg.To); ok {
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
-		}
+		return
 
 	case MsgCallAccept:
-		if _, ok := wsHub.GetClient(msg.To); ok {
-			msg.From = from
-			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
+		session := GetCallSession(msg.CallID)
+		if session == nil {
+			log.Printf("[CALL] No session for %s", msg.CallID)
+			return
+		}
+		UpdateCallState(msg.CallID, CallStateConnecting)
+		msg.From = from
+		data, _ := json.Marshal(msg)
+		if wsHub.SendTo(session.Caller, data) {
+			log.Printf("[CALL] Call accepted, forwarded to %s", session.Caller)
 		}
 
 	case MsgCallReject:
-		if _, ok := wsHub.GetClient(msg.To); ok {
+		session := GetCallSession(msg.CallID)
+		if session != nil {
 			msg.From = from
 			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
+			wsHub.SendTo(session.Caller, data)
+			UpdateCallState(msg.CallID, CallStateTerminated)
 		}
 
 	case MsgICE:
+		// Buffer ICE if peer not ready, otherwise forward
 		if _, ok := wsHub.GetClient(msg.To); ok {
 			msg.From = from
 			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
+			if !wsHub.SendTo(msg.To, data) {
+				BufferICE(msg.CallID, msg.ICE)
+			}
+		} else {
+			if msg.CallID != "" && msg.ICE != "" {
+				BufferICE(msg.CallID, msg.ICE)
+			}
 		}
 
 	case MsgCallEnd:
-		if _, ok := wsHub.GetClient(msg.To); ok {
+		session := GetCallSession(msg.CallID)
+		if session != nil {
 			msg.From = from
 			data, _ := json.Marshal(msg)
-			wsHub.SendTo(msg.To, data)
+			if session.Caller != from {
+				wsHub.SendTo(session.Caller, data)
+			}
+			if session.Callee != from {
+				wsHub.SendTo(session.Callee, data)
+			}
+			EndCallSession(msg.CallID)
 		}
 
 	case MsgGetUsers:
-		// Send list of all connected clients
+		// Existing code
 		users := wsHub.GetAllClients()
 		usersMsg := struct {
 			Type  string   `json:"type"`

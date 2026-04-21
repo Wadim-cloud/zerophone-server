@@ -150,11 +150,17 @@
             ACTIVE: 'active'
         };
         
-        // WebRTC config
+        // WebRTC config with STUN and TURN
         const rtcConfig = {
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { 
+                    urls: 'turn:turn.wadiem.cloudns.be:3478',
+                    username: 'zerophone',
+                    credential: 'secretpassword'
+                }
             ]
         };
         
