@@ -2,6 +2,8 @@ services:
   zerophone:
     build: .
     network_mode: host
+    ports:
+      - "8080:8080"
     volumes:
       - zerophone-data:/data
       - ./static:/app/static:ro
@@ -14,6 +16,8 @@ services:
   zerophone-node:
     build: .
     network_mode: host
+    ports:
+      - "8081:8080"
     volumes:
       - zerophone-node-data:/data
       - ./cert.pem:/app/cert.pem:ro
