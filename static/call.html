@@ -1,345 +1,207 @@
 <!DOCTYPE html>
 <html>
 <head>
-	<title>ZeroPhone — Voice Call</title>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<style>
-		:root {
-			--bg: #0d1117; --card: #161b22; --border: #30363d;
-			--text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
-			--success: #3fb950; --danger: #f85149; --warning: #f0883e;
-		}
-		* { box-sizing: border-box; margin: 0; padding: 0; }
-		body {
-			font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-			background: var(--bg); color: var(--text); padding: 20px;
-			min-height: 100vh;
-		}
-		.container { max-width: 600px; margin: 0 auto; }
-		header {
-			display: flex; justify-content: space-between; align-items: center;
-			margin-bottom: 24px; padding-bottom: 16px;
-			border-bottom: 1px solid var(--border);
-		}
-		h1 { color: var(--accent); font-size: 1.5rem; }
-		.btn {
-			background: var(--accent); color: white; border: none;
-			padding: 12px 24px; border-radius: 8px; cursor: pointer;
-			font-size: 1rem; width: 100%; margin: 8px 0;
-		}
-		.btn:hover { opacity: 0.9; }
-		.btn-call { background: var(--success); }
-		.btn-end { background: var(--danger); }
-		.btn:disabled { opacity: 0.5; cursor: not-allowed; }
-		
-		.card {
-			background: var(--card); border: 1px solid var(--border);
-			border-radius: 8px; padding: 20px; margin-bottom: 16px;
-		}
-		.peer {
-			display: flex; justify-content: space-between; align-items: center;
-			padding: 12px; border-bottom: 1px solid var(--border);
-		}
-		.peer:last-child { border-bottom: none; }
-		.peer-name { font-weight: 600; }
-		.peer-ip { color: var(--muted); font-size: 0.875rem; }
-		.status { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
-		.status.online { background: rgba(63,185,80,0.2); color: var(--success); }
-		.status.offline { background: rgba(248,81,73,0.2); color: var(--danger); }
-		.status.ringing { background: rgba(240,136,62,0.2); color: var(--warning); }
-		
-		.call-screen {
-			display: none; text-align: center; padding: 40px;
-		}
-		.call-screen.active { display: block; }
-		.call-timer { font-size: 2rem; font-weight: 600; margin: 20px 0; }
-		.waveform {
-			height: 60px; background: var(--card); border-radius: 8px;
-			display: flex; align-items: center; justify-content: center; gap: 4px;
-		}
-		.wave { width: 8px; background: var(--success); border-radius: 4px; animation: wave 0.5s ease-in-out infinite; }
-		@keyframes wave { 0%,100% { height: 20px; } 50% { height: 50px; } }
-		
-		.log {
-			background: var(--card); border-radius: 8px; padding: 12px;
-			font-family: monospace; font-size: 0.75rem; max-height: 200px; overflow-y: auto;
-		}
-		.log-entry { color: var(--muted); margin: 4px 0; }
-		.log-entry.sent { color: var(--accent); }
-		.log-entry.recv { color: var(--success); }
-		.log-entry.error { color: var(--danger); }
-	</style>
+    <title>ZeroPhone — Call</title>
+    <meta charset="UTF-8">
+    <style>
+        :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --accent: #58a6ff; --success: #3fb950; --danger: #f85149; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); padding: 20px; min-height: 100vh; }
+        .container { max-width: 400px; margin: 0 auto; text-align: center; }
+        h1 { color: var(--accent); margin-bottom: 20px; }
+        .btn { background: var(--accent); color: white; border: none; padding: 16px 32px; border-radius: 8px; cursor: pointer; font-size: 1.2rem; width: 100%; margin: 8px 0; }
+        .btn.call { background: var(--success); }
+        .btn.end { background: var(--danger); }
+        .status { padding: 12px; margin: 12px 0; border-radius: 8px; background: var(--card); }
+        .status.idle { border: 1px solid var(--border); }
+        .status.connecting { border: 1px solid var(--warning); color: #f0883e; }
+        .status.active { border: 1px solid var(--success); color: var(--success); }
+        #peers { margin: 20px 0; }
+        .peer { padding: 12px; margin: 8px 0; border-radius: 8px; background: var(--card); display: flex; justify-content: space-between; align-items: center; }
+        .peer-name { font-weight: 600; }
+        .log { font-size: 0.75rem; color: #8b949e; margin-top: 20px; text-align: left; }
+    </style>
 </head>
 <body>
-	<div class="container">
-		<header>
-			<h1>ZeroPhone</h1>
-			<div style="color: var(--muted)" id="my-name">-</div>
-		</header>
-		
-		<!-- Idle Screen -->
-		<div id="idle-screen">
-			<div class="card">
-				<h3>Contacts</h3>
-				<div id="peer-list">
-					<div style="color: var(--muted); padding: 20px; text-align: center;">
-						Loading contacts...
-					</div>
-				</div>
-				<button class="btn" onclick="refreshContacts()">↻ Refresh</button>
-			</div>
-			
-			<div class="card">
-				<h3>Activity Log</h3>
-				<div class="log" id="log"></div>
-			</div>
-		</div>
-		
-		<!-- Incoming Call -->
-		<div id="incoming-screen" class="call-screen">
-			<h2>Incoming Call</h2>
-			<div class="call-timer" id="incoming-caller">-</div>
-			<p>is calling you...</p>
-			<button class="btn btn-call" onclick="answerCall()">Answer</button>
-			<button class="btn btn-end" onclick="rejectCall()">Reject</button>
-		</div>
-		
-		<!-- Outgoing Call -->
-		<div id="outgoing-screen" class="call-screen">
-			<h2>Calling...</h2>
-			<div class="call-timer" id="outgoing-callee">-</div>
-			<div class="waveform">
-				<div class="wave"></div><div class="wave"></div><div class="wave"></div>
-				<div class="wave"></div><div class="wave"></div>
-			</div>
-			<button class="btn btn-end" onclick="endCall()">End Call</button>
-		</div>
-		
-		<!-- Active Call -->
-		<div id="active-screen" class="call-screen">
-			<h2>In Call</h2>
-			<div class="call-timer" id="call-peer">-</div>
-			<div class="waveform">
-				<div class="wave"></div><div class="wave"></div><div class="wave"></div>
-				<div class="wave"></div><div class="wave"></div>
-			</div>
-			<button class="btn btn-end" onclick="endCall()">End Call</button>
-		</div>
-	</div>
-	
-	<script>
-		const SERVER = window.location.origin;
-		let myId = localStorage.getItem('zerophone_id') || '';
-		let myName = localStorage.getItem('zerophone_name') || '';
-		let callState = 'idle'; // idle, ringing, calling, active
-		let callId = '';
-		let callPeer = '';
-		let callTimer = null;
-		let callSeconds = 0;
-		let peers = [];
-		
-		// Initialize
-		async function init() {
-			// Register if not
-			if (!myId) {
-				await fetch(SERVER + '/register', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({name: myName || 'phone-' + Math.random().toString(36).substr(2,6)})
-				}).then(r => r.json()).then(d => {
-					myId = d.id;
-					myName = d.name;
-					localStorage.setItem('zerophone_id', myId);
-					localStorage.setItem('zerophone_name', myName);
-				});
-			}
-			document.getElementById('my-name').textContent = myName;
-			log('Registered as ' + myName);
-			refreshContacts();
-			pollCalls();
-		}
-		
-		// Refresh contacts
-		async function refreshContacts() {
-			try {
-				const r = await fetch(SERVER + '/nodes');
-				peers = await r.json();
-				const list = document.getElementById('peer-list');
-				if (peers.length === 0) {
-					list.innerHTML = '<div style="color: var(--muted); padding: 20px; text-align: center;">No contacts found</div>';
-					return;
-				}
-				list.innerHTML = peers.filter(p => p.id !== myId).map(p => `
-					<div class="peer">
-						<div>
-							<div class="peer-name">${p.name || p.id}</div>
-							<div class="peer-ip">${p.ip || 'N/A'}</div>
-						</div>
-						<div style="display: flex; gap: 8px; align-items: center;">
-							<span class="status ${p.status}">${p.status}</span>
-							<button class="btn" style="width: auto; padding: 8px 16px;" onclick="startCall('${p.id}')">Call</button>
-						</div>
-					</div>
-				`).join('');
-			} catch(e) {
-				log('Error: ' + e, 'error');
-			}
-		}
-		
-		// Poll for incoming calls
-		function pollCalls() {
-			setInterval(async () => {
-				try {
-					const r = await fetch(SERVER + '/call', {
-						method: 'POST',
-						headers: {'Content-Type': 'application/json'}
-					});
-					const calls = await r.json();
-					for (const call of calls) {
-						if (call.status === 'pending' && callState === 'idle') {
-							// Incoming call!
-							callId = call.call_id;
-							callPeer = call.from;
-							callState = 'ringing';
-							document.getElementById('incoming-caller').textContent = call.from_name || call.from;
-							log('Incoming call from ' + (call.from_name || call.from), 'recv');
-							showScreen('incoming-screen');
-						}
-					}
-				} catch(e) {}
-			}, 2000);
-		}
-		
-		// Start call
-		async function startCall(peerId) {
-			if (callState !== 'idle') return;
-			callPeer = peerId;
-			callId = Math.random().toString(36).substr(2, 9);
-			callState = 'calling';
-			showScreen('outgoing-screen');
-			document.getElementById('outgoing-callee').textContent = peers.find(p => p.id === peerId)?.name || peerId;
-			log('Calling ' + peerId + '...', 'sent');
-			
-			try {
-				const r = await fetch(SERVER + '/call', {
-					method: 'POST',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({to: peerId})
-				});
-				const data = await r.json();
-				if (data.call_id) {
-					callId = data.call_id;
-					log('Call initiated: ' + callId, 'sent');
-				}
-			} catch(e) {
-				log('Call failed: ' + e, 'error');
-				endCall();
-			}
-		}
-		
-		// SDP Exchange
-		async function startSDP() {
-			// In real app, use WebRTC. Here we simulate with HTTP polling
-			let attempts = 0;
-			const poll = setInterval(async () => {
-				attempts++;
-				if (callState === 'idle') {
-					clearInterval(poll);
-					return;
-				}
-				
-				// Check for answer
-				try {
-					const r = await fetch(SERVER + '/sdp/answer', {
-						method: 'POST',
-						headers: {'Content-Type': 'application/json'},
-						body: JSON.stringify({call_id: callId, sdp: 'offer', to: callPeer})
-					});
-				} catch(e) {}
-				
-				if (attempts > 30) {
-					log('No answer', 'error');
-					endCall();
-					clearInterval(poll);
-				}
-			}, 1000);
-		}
-		
-		// Answer call
-		async function answerCall() {
-			callState = 'active';
-			showScreen('active-screen');
-			document.getElementById('call-peer').textContent = document.getElementById('incoming-caller').textContent;
-			log('Call answered', 'recv');
-			startTimer();
-			
-			// Send acceptance
-			await fetch(SERVER + '/call/respond', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({call_id: callId, status: 'accepted'})
-			});
-		}
-		
-		// Reject call
-		async function rejectCall() {
-			log('Call rejected', 'recv');
-			await fetch(SERVER + '/call/respond', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({call_id: callId, status: 'rejected'})
-			});
-			showScreen('idle-screen');
-			callState = 'idle';
-		}
-		
-		// End call
-		async function endCall() {
-			if (callTimer) clearInterval(callTimer);
-			callState = 'idle';
-			callSeconds = 0;
-			log('Call ended', 'recv');
-			
-			await fetch(SERVER + '/call/end', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({call_id: callId, to: callPeer})
-			});
-			
-			showScreen('idle-screen');
-			refreshContacts();
-		}
-		
-		// Timer
-		function startTimer() {
-			callSeconds = 0;
-			callTimer = setInterval(() => {
-				callSeconds++;
-				const mins = Math.floor(callSeconds / 60);
-				const secs = callSeconds % 60;
-				document.getElementById('call-peer').textContent = 
-					(document.getElementById('call-peer').textContent.split(' ')[0]) + 
-					' ' + mins + ':' + secs.toString().padStart(2,'0');
-			}, 1000);
-		}
-		
-		// UI helpers
-		function showScreen(id) {
-			['idle-screen', 'incoming-screen', 'outgoing-screen', 'active-screen'].forEach(s => {
-				document.getElementById(s).classList.remove('active');
-			});
-			document.getElementById(id).classList.add('active');
-		}
-		
-		function log(msg, type = '') {
-			const el = document.getElementById('log');
-			el.innerHTML = `<div class="log-entry ${type}">${new Date().toLocaleTimeString()} ${msg}</div>` + el.innerHTML;
-		}
-		
-		// Start
-		init();
-		setInterval(refreshContacts, 10000);
-	</script>
+    <div class="container">
+        <h1>📞 ZeroPhone Call</h1>
+
+        <div id="status" class="status idle">Not connected</div>
+
+        <div id="peers"></div>
+
+        <div class="log" id="log"></div>
+    </div>
+
+    <script>
+        const SERVER = window.location.origin.replace('http', 'ws');
+        let ws = null;
+        let myId = localStorage.getItem('zerophone_id') || 'user-' + Math.random().toString(36).substr(2,8);
+        let state = 'idle';
+        let pc = null;
+        let localStream = null;
+
+        const rtcConfig = {
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        };
+
+        // Call state machine
+        const CallState = { IDLE: 'idle', INVITING: 'inviting', RINGING: 'ringing', CONNECTING: 'connecting', ACTIVE: 'active' };
+
+        function log(msg) {
+            document.getElementById('log').innerHTML = '[' + new Date().toLocaleTimeString() + '] ' + msg + '<br>' + document.getElementById('log').innerHTML;
+        }
+
+        function connect() {
+            ws = new WebSocket(SERVER + '/ws/' + myId);
+
+            ws.onopen = () => {
+                log('Connected as ' + myId);
+                updateStatus(CallState.IDLE);
+                loadPeers();
+                getUserMedia();
+            };
+
+            ws.onmessage = async (e) => {
+                const msg = JSON.parse(e.data);
+                handleMessage(msg);
+            };
+
+            ws.onclose = () => {
+                log('Disconnected');
+                updateStatus(CallState.IDLE);
+                setTimeout(connect, 3000);
+            };
+
+            ws.onerror = (e) => log('Error: ' + e);
+        }
+
+        function handleMessage(msg) {
+            switch(msg.type) {
+                case 'CALL_INVITE':
+                    if (state === CallState.IDLE) {
+                        state = CallState.RINGING;
+                        updateStatus(CallState.RINGING);
+                        log('Incoming call from ' + msg.from);
+                        // Auto-answer for demo, or prompt user
+                        acceptCall(msg);
+                    }
+                    break;
+                case 'CALL_ACCEPT':
+                    if (state === CallState.INVITING) {
+                        state = CallState.CONNECTING;
+                        updateStatus(CallState.CONNECTING);
+                        pc.setRemoteDescription(new RTCSessionDescription(msg.payload.sdp));
+                        log('Call accepted');
+                        state = CallState.ACTIVE;
+                        updateStatus(CallState.ACTIVE);
+                    }
+                    break;
+                case 'CALL_RINGING':
+                    log('Ringing...');
+                    break;
+                case 'ICE_CANDIDATE':
+                    if (pc) pc.addIceCandidate(new RTCIceCandidate(msg.payload));
+                    break;
+                case 'CALL_END':
+                    endCall();
+                    break;
+                case 'USERS':
+                    renderPeers(msg.users);
+                    break;
+            }
+        }
+
+        // WebRTC call flow
+        async function makeCall(toId) {
+            state = CallState.INVITING;
+            updateStatus(CallState.INVITING);
+
+            pc = new RTCPeerConnection(rtcConfig);
+            pc.onicecandidate = (e) => {
+                if (e.candidate) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: toId, payload: e.candidate }));
+            };
+            pc.ontrack = (e) => {
+                document.body.appendChild(document.createElement('audio')).srcObject = e.streams[0];
+            };
+
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            ws.send(JSON.stringify({
+                type: 'CALL_INVITE',
+                to: toId,
+                payload: { sdp: pc.localDescription }
+            }));
+
+            log('Calling ' + toId);
+        }
+
+        async function acceptCall(inviteMsg) {
+            pc = new RTCPeerConnection(rtcConfig);
+            pc.onicecandidate = (e) => {
+                if (e.candidate) ws.send(JSON.stringify({ type: 'ICE_CANDIDATE', to: inviteMsg.from, payload: e.candidate }));
+            };
+            pc.ontrack = (e) => {
+                document.body.appendChild(document.createElement('audio')).srcObject = e.streams[0];
+            };
+
+            localStream.getTracks().forEach(t => pc.addTrack(t, localStream));
+
+            await pc.setRemoteDescription(new RTCSessionDescription(inviteMsg.payload.sdp));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+
+            ws.send(JSON.stringify({
+                type: 'CALL_ACCEPT',
+                to: inviteMsg.from,
+                payload: { sdp: pc.localDescription }
+            }));
+
+            state = CallState.ACTIVE;
+            updateStatus(CallState.ACTIVE);
+            log('Call connected');
+        }
+
+        function endCall() {
+            if (pc) pc.close();
+            if (localStream) localStream.getTracks().forEach(t => t.stop());
+            state = CallState.IDLE;
+            updateStatus(CallState.IDLE);
+            log('Call ended');
+        }
+
+        async function getUserMedia() {
+            localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
+
+        function loadPeers() {
+            ws.send(JSON.stringify({ type: 'GET_USERS' }));
+        }
+
+        function renderPeers(users) {
+            const div = document.getElementById('peers');
+            div.innerHTML = users.map(u =>
+                `<div class="peer">
+                    <span class="peer-name">${u.name}</span>
+                    <button class="btn" onclick="makeCall('${u.id}')">Call</button>
+                </div>`
+            ).join('');
+        }
+
+        function updateStatus(s) {
+            state = s;
+            const el = document.getElementById('status');
+            el.className = 'status ' + s;
+            el.textContent = { idle: 'Ready', inviting: 'Calling...', ringing: 'Incoming...', connecting: 'Connecting...', active: 'In Call' }[s];
+        }
+
+        connect();
+    </script>
 </body>
 </html>
