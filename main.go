@@ -355,17 +355,9 @@ func main() {
 
 	bindAddr := *addr
 
-	// Check for TLS certificates - use flags or fall back to local cert.pem/key.pem
+	// Use flag values only - let nginx handle SSL
 	certPath := *certFile
 	keyPath := *keyFile
-	if certPath == "" || keyPath == "" {
-		if _, err := os.Stat("cert.pem"); err == nil {
-			certPath = "cert.pem"
-		}
-		if _, err := os.Stat("key.pem"); err == nil {
-			keyPath = "key.pem"
-		}
-	}
 	useTLS = (certPath != "" && keyPath != "")
 
 	log.Printf("ZeroPhone v1.0 starting on %s", bindAddr)
