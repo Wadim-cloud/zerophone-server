@@ -5,7 +5,7 @@ services:
     volumes:
       - zerophone-data:/data
       - ./static:/app/static:ro
-    command: ["./zerophone", "--addr", ":8443"]
+    command: ["./zerophone", "--addr", ":9443"]
     environment:
       - ZEROPHONE_CLUSTER=1
 
