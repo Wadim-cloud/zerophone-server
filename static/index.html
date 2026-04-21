@@ -222,8 +222,12 @@
                 document.getElementById('my-name').textContent = myName;
                 updateDebug();
                 getUserMedia();
-                // Send JOIN message with our name
-                ws.send(JSON.stringify({ type: 'JOIN', id: myId, name: myName }));
+                // Send JOIN message with our name (in payload for proper parsing)
+                ws.send(JSON.stringify({ 
+                    type: 'JOIN', 
+                    from: myId,
+                    payload: { name: myName }
+                }));
             };
             
             ws.onmessage = async (e) => {

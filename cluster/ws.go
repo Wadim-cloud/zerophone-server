@@ -339,9 +339,20 @@ func HandleVoIPMessage(from string, msg VoIPMessage) {
 
 	// Handle JOIN - store client name
 	if msg.Type == MsgJoin || msg.Type == "JOIN" {
-		if name := msg.SDP; name != "" {
-			clientNames[from] = name
-			log.Printf("[WS] %s joined as '%s'", from, name)
+		// Get name from Payload if it's a JSON object
+		if msg.Payload != nil {
+			var joinData struct {
+				Name string `json:"name"`
+			}
+			json.Unmarshal(msg.Payload, &joinData)
+			if joinData.Name != "" {
+				clientNames[from] = joinData.Name
+				log.Printf("[WS] %s joined as '%s'", from, joinData.Name)
+			}
+		}
+		// Also try From field as fallback
+		if name := clientNames[from]; name == "" && msg.From != "" {
+			clientNames[from] = msg.From
 		}
 	}
 
