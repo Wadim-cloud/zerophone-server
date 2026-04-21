@@ -3,13 +3,13 @@ services:
     build: .
     network_mode: host
     ports:
-      - "8080:8080"
+      - "8443:8443"
     volumes:
       - zerophone-data:/data
       - ./static:/app/static:ro
       - ./cert.pem:/app/cert.pem:ro
       - ./key.pem:/app/key.pem:ro
-    command: ["./zerophone", "--addr", ":8080", "--cert", "cert.pem", "--key", "key.pem"]
+    command: ["./zerophone", "--addr", ":8443", "--cert", "cert.pem", "--key", "key.pem"]
     environment:
       - ZEROPHONE_CLUSTER=1
 
@@ -17,12 +17,12 @@ services:
     build: .
     network_mode: host
     ports:
-      - "8081:8080"
+      - "8444:8443"
     volumes:
       - zerophone-node-data:/data
       - ./cert.pem:/app/cert.pem:ro
       - ./key.pem:/app/key.pem:ro
-    command: ["./zerophone", "--addr", ":8080", "--cert", "cert.pem", "--key", "key.pem"]
+    command: ["./zerophone", "--addr", ":8443", "--cert", "cert.pem", "--key", "key.pem"]
     environment:
       - ZEROPHONE_CLUSTER=1
     depends_on:
