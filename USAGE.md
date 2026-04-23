@@ -250,6 +250,90 @@ Access debug endpoints:
 - `/status` - System metrics
 - `/cluster/status` - Cluster health
 
+## Server Deployment
+
+### Prerequisites
+- Go 1.19+ installed
+- Domain name pointing to your server
+- Firewall allowing ports 80, 443, 9443
+
+### 1. Build and Run Server
+
+```bash
+cd zerophone
+go build -o zerophone .
+./zerophone
+```
+
+Server listens on `localhost:9443` (no TLS - Caddy handles it).
+
+### 2. Install and Configure Caddy
+
+```bash
+# Install Caddy (Ubuntu/Debian)
+sudo apt install caddy
+
+# Copy Caddyfile to /etc/caddy/
+sudo cp Caddyfile /etc/caddy/Caddyfile
+
+# Edit domain name
+sudo nano /etc/caddy/Caddyfile
+# Replace 'yourdomain.com' with your actual domain
+
+# Reload Caddy
+sudo systemctl reload caddy
+```
+
+### 3. Configure Firewall
+
+```bash
+# Allow HTTP/HTTPS (Caddy)
+sudo firewall-cmd --add-service=http --permanent
+sudo firewall-cmd --add-service=https --permanent
+
+# Allow ZeroPhone port (internal)
+sudo firewall-cmd --add-port=9443/tcp --permanent
+
+# Reload firewall
+sudo firewall-cmd --reload
+```
+
+### 4. Test Deployment
+
+1. Visit `https://yourdomain.com`
+2. Open Control Terminal
+3. Verify WebSocket connects (check browser console)
+4. Make test calls
+
+### Multi-Node Scaling
+
+For load balancing across multiple servers:
+
+```caddyfile
+yourdomain.com {
+    reverse_proxy {
+        to localhost:9443 localhost:9444 localhost:9445
+        lb_policy random
+    }
+}
+```
+
+Each node runs ZeroPhone on different ports.
+
+### ZeroTier Integration
+
+For pure ZeroTier internal network:
+
+1. Join ZeroTier network on server
+2. Configure Caddy to bind to ZeroTier IP
+3. Access via ZeroTier IP instead of public domain
+
+### Monitoring
+
+- `/status` - Server health
+- `/debug.html` - Debug dashboard
+- `/nodes` - Cluster nodes
+
 ## Next Steps
 
 With basic calling working, explore:

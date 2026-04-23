@@ -1,0 +1,15 @@
+# Caddyfile for ZeroPhone deployment
+# Place this in /etc/caddy/Caddyfile and reload: sudo systemctl reload caddy
+
+yourdomain.com {
+    # TLS is automatic with Let's Encrypt
+    reverse_proxy localhost:9443
+}
+
+# Multi-node load balancing (uncomment when scaling)
+# yourdomain.com {
+#     reverse_proxy {
+#         to localhost:9443 localhost:9444 localhost:9445
+#         lb_policy random
+#     }
+# }
