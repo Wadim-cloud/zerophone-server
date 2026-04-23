@@ -4,172 +4,227 @@
 	<title>ZeroPhone — Debug Dashboard</title>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 	<style>
 		:root {
-			--bg: #0d1117; --card: #161b22; --border: #30363d;
-			--text: #c9d1d9; --muted: #8b949e; --accent: #58a6ff;
-			--success: #3fb950; --danger: #f85149; --warning: #f0883e;
+			--bg: #0d1117;
+			--card: #161b22;
+			--border: #30363d;
+			--text: #c9d1d9;
+			--muted: #8b949e;
+			--accent: #58a6ff;
+			--success: #3fb950;
+			--danger: #f85149;
 		}
-		* { box-sizing: border-box; margin: 0; padding: 0; }
+
 		body {
-			font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-			background: var(--bg); color: var(--text); padding: 20px;
-			min-height: 100vh;
+			font-family: system-ui, -apple-system, sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			margin: 0;
+			padding: 20px;
 		}
-		.container { max-width: 1200px; margin: 0 auto; }
+
+		.container { max-width: 1200px; margin: auto; }
+
 		header {
-			display: flex; justify-content: space-between; align-items: center;
-			margin-bottom: 24px; padding-bottom: 16px;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 20px;
+		}
+
+		h1 { color: var(--accent); font-size: 20px; }
+
+		button {
+			background: var(--accent);
+			color: white;
+			border: none;
+			padding: 8px 14px;
+			border-radius: 8px;
+			cursor: pointer;
+		}
+
+		.grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+			gap: 16px;
+		}
+
+		.card {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 10px;
+			padding: 14px;
+		}
+
+		h2 {
+			font-size: 14px;
+			color: var(--muted);
+			margin-bottom: 10px;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 13px;
+		}
+
+		th, td {
+			text-align: left;
+			padding: 6px;
 			border-bottom: 1px solid var(--border);
 		}
-		h1 { color: var(--accent); }
-		h2 { color: var(--text); font-size: 1.2rem; margin: 16px 0 8px; }
-		.btn {
-			background: var(--accent); color: white; border: none;
-			padding: 8px 16px; border-radius: 6px; cursor: pointer;
-			font-size: 0.875rem;
-		}
-		.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
-		.card {
-			background: var(--card); border: 1px solid var(--border);
-			border-radius: 8px; padding: 16px;
-		}
-		table { width: 100%; border-collapse: collapse; }
-		th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); font-size: 0.875rem; }
+
 		th { color: var(--muted); font-weight: 500; }
-		.status { padding: 4px 8px; border-radius: 4px; font-size: 0.75rem; }
-		.status.online { background: rgba(63,185,80,0.2); color: var(--success); }
-		.status.offline { background: rgba(248,81,73,0.2); color: var(--danger); }
-		.mono { font-family: monospace; font-size: 0.8rem; }
-		.json { 
-			background: var(--bg); padding: 12px; border-radius: 6px; 
-			font-family: monospace; font-size: 0.75rem; max-height: 300px; overflow: auto;
-			white-space: pre-wrap; word-break: break-all;
+
+		.status {
+			padding: 3px 6px;
+			border-radius: 5px;
+			font-size: 11px;
 		}
-		.refresh { color: var(--muted); font-size: 0.75rem; }
+
+		.status.online {
+			background: rgba(63,185,80,0.2);
+			color: var(--success);
+		}
+
+		.status.offline {
+			background: rgba(248,81,73,0.2);
+			color: var(--danger);
+		}
+
+		.mono { font-family: monospace; font-size: 12px; }
+
+		pre {
+			background: #0b0f14;
+			padding: 10px;
+			border-radius: 8px;
+			overflow: auto;
+			font-size: 11px;
+			max-height: 240px;
+		}
+
+		.footer {
+			color: var(--muted);
+			font-size: 11px;
+			margin-top: 10px;
+		}
 	</style>
 </head>
+
 <body>
-	<div class="container">
-		<header>
-			<h1>🔧 ZeroPhone Debug Dashboard</h1>
-			<button class="btn" onclick="refreshAll()">↻ Refresh</button>
-		</header>
-		
-		<div class="grid">
-			<!-- System Status -->
-			<div class="card">
-				<h2>System Status</h2>
-				<table id="status-table">
-					<tr><th>Property</th><th>Value</th></tr>
-				</table>
-				<p class="refresh" id="status-refresh"></p>
-			</div>
-			
-			<!-- Cluster Nodes -->
-			<div class="card">
-				<h2>Cluster Nodes</h2>
-				<table id="nodes-table">
-					<tr><th>Name</th><th>ID</th><th>IP</th><th>Status</th><th>Last Seen</th></tr>
-				</table>
-				<p class="refresh" id="nodes-refresh"></p>
-			</div>
-			
-			<!-- Network Info -->
-			<div class="card">
-				<h2>Network Info</h2>
-				<table id="network-table">
-					<tr><th>Property</th><th>Value</th></tr>
-				</table>
-				<p class="refresh" id="network-refresh"></p>
-			</div>
-			
-			<!-- Raw JSON -->
-			<div class="card" style="grid-column: 1/-1;">
-				<h2>Raw API Responses</h2>
-				<div class="grid">
-					<div>
-						<h3>/status</h3>
-						<div class="json" id="status-json"></div>
-					</div>
-					<div>
-						<h3>/nodes</h3>
-						<div class="json" id="nodes-json"></div>
-					</div>
-					<div>
-						<h3>/cluster/nodes</h3>
-						<div class="json" id="cluster-json"></div>
-					</div>
-				</div>
-			</div>
+<div class="container">
+
+	<header>
+		<h1>🔧 ZeroPhone Cluster Dashboard</h1>
+		<button onclick="refreshAll()">Refresh</button>
+	</header>
+
+	<div class="grid">
+
+		<div class="card">
+			<h2>System Status</h2>
+			<table id="status"></table>
+			<div class="footer" id="statusTime"></div>
 		</div>
+
+		<div class="card">
+			<h2>Cluster Nodes</h2>
+			<table id="nodes"></table>
+			<div class="footer" id="nodesTime"></div>
+		</div>
+
+		<div class="card">
+			<h2>Cluster API</h2>
+			<table id="cluster"></table>
+		</div>
+
+		<div class="card" style="grid-column: 1/-1;">
+			<h2>Raw Debug Output</h2>
+
+			<h3>/status</h3>
+			<pre id="rawStatus"></pre>
+
+			<h3>/nodes</h3>
+			<pre id="rawNodes"></pre>
+
+			<h3>/cluster/nodes</h3>
+			<pre id="rawCluster"></pre>
+		</div>
+
 	</div>
-	
-	<script>
-		const SERVER = window.location.origin;
-		
-		async function refreshAll() {
-			await Promise.all([
-				loadStatus(),
-				loadNodes(),
-				loadNetwork(),
-				loadCluster()
-			]);
-		}
-		
-		async function loadStatus() {
-			const r = await fetch(SERVER + '/status');
-			const d = await r.json();
-			document.getElementById('status-json').textContent = JSON.stringify(d, null, 2);
-			
-			const table = document.getElementById('status-table');
-			table.innerHTML = '<tr><th>Property</th><th>Value</th></tr>';
-			for (const [k, v] of Object.entries(d)) {
-				table.innerHTML += `<tr><td>${k}</td><td class="mono">${v}</td></tr>`;
-			}
-			document.getElementById('status-refresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
-		}
-		
-		async function loadNodes() {
-			const r = await fetch(SERVER + '/nodes');
-			const d = await r.json();
-			document.getElementById('nodes-json').textContent = JSON.stringify(d, null, 2);
-			
-			const table = document.getElementById('nodes-table');
-			table.innerHTML = '<tr><th>Name</th><th>ID</th><th>IP</th><th>Status</th><th>Last Seen</th></tr>';
-			d.forEach(n => {
-				table.innerHTML += `<tr>
-					<td>${n.name || '-'}</td>
-					<td class="mono">${n.id}</td>
-					<td class="mono">${n.ip || '-'}</td>
-					<td><span class="status ${n.status}">${n.status}</span></td>
-					<td>${n.last_seen ? new Date(n.last_seen*1000).toLocaleTimeString() : '-'}</td>
-				</tr>`;
-			});
-			document.getElementById('nodes-refresh').textContent = 'Updated: ' + new Date().toLocaleTimeString() + ' (' + d.length + ' nodes)';
-		}
-		
-		async function loadNetwork() {
-			const r = await fetch(SERVER + '/cluster/status');
-			let d = {};
-			try { d = await r.json(); } catch(e) {}
-			
-			const table = document.getElementById('network-table');
-			table.innerHTML = '<tr><th>Property</th><th>Value</th></tr>';
-			for (const [k, v] of Object.entries(d)) {
-				table.innerHTML += `<tr><td>${k}</td><td class="mono">${v}</td></tr>`;
-			}
-			document.getElementById('network-refresh').textContent = 'Updated: ' + new Date().toLocaleTimeString();
-		}
-		
-		async function loadCluster() {
-			const r = await fetch(SERVER + '/cluster/nodes');
-			const d = await r.json();
-			document.getElementById('cluster-json').textContent = JSON.stringify(d, null, 2);
-		}
-		
-		refreshAll();
-		setInterval(refreshAll, 5000);
-	</script>
+</div>
+
+<script>
+const API = window.location.origin;
+
+async function refreshAll() {
+	await Promise.all([
+		loadStatus(),
+		loadNodes(),
+		loadCluster()
+	]);
+}
+
+async function loadStatus() {
+	const r = await fetch(`${API}/status`);
+	const d = await r.json();
+
+	document.getElementById("rawStatus").textContent = JSON.stringify(d, null, 2);
+
+	const t = document.getElementById("status");
+	t.innerHTML = "";
+
+	Object.entries(d).forEach(([k, v]) => {
+		t.innerHTML += `<tr><td>${k}</td><td class="mono">${v}</td></tr>`;
+	});
+
+	document.getElementById("statusTime").textContent =
+		"Updated: " + new Date().toLocaleTimeString();
+}
+
+async function loadNodes() {
+	const r = await fetch(`${API}/nodes`);
+	const d = await r.json();
+
+	document.getElementById("rawNodes").textContent = JSON.stringify(d, null, 2);
+
+	const t = document.getElementById("nodes");
+	t.innerHTML = "<tr><th>Name</th><th>ID</th><th>IP</th><th>Status</th></tr>";
+
+	d.forEach(n => {
+		t.innerHTML += `
+			<tr>
+				<td>${n.name || "-"}</td>
+				<td class="mono">${n.id}</td>
+				<td class="mono">${n.zerotier_ip || n.ip || "-"}</td>
+				<td><span class="status ${n.status}">${n.status || "unknown"}</span></td>
+			</tr>
+		`;
+	});
+
+	document.getElementById("nodesTime").textContent =
+		`Updated: ${new Date().toLocaleTimeString()} (${d.length})`;
+}
+
+async function loadCluster() {
+	const r = await fetch(`${API}/cluster/nodes`);
+	const d = await r.json();
+
+	document.getElementById("rawCluster").textContent = JSON.stringify(d, null, 2);
+
+	const t = document.getElementById("cluster");
+	t.innerHTML = "";
+
+	Object.entries(d || {}).forEach(([k, v]) => {
+		t.innerHTML += `<tr><td>${k}</td><td class="mono">${JSON.stringify(v)}</td></tr>`;
+	});
+}
+
+refreshAll();
+setInterval(refreshAll, 5000);
+</script>
+
 </body>
 </html>

@@ -1,311 +1,1424 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ZeroPhone — Voice Call</title>
+    <title>ZeroPhone — Control Terminal</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <style>
-        :root {
-            --bg:#0d1117; --card:#161b22; --border:#30363d;
-            --text:#c9d1d9; --accent:#58a6ff;
-            --success:#3fb950; --danger:#f85149;
-            --warning:#f0883e; --muted:#6e7681;
-        }
-
-        * { box-sizing:border-box; margin:0; padding:0; }
+        * { box-sizing: border-box; }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            background: #0a0e14;
+            color: #79c0ff;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+
+        .layout {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            height: 100vh;
+        }
+
+        /* Sidebar - User List */
+        .sidebar {
+            background: #0d1117;
+            border-right: 1px solid #21262d;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            color: #8b949e;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin: 0 0 12px 0;
+            letter-spacing: 1px;
+        }
+
+        .user-item {
+            padding: 10px 12px;
+            margin: 4px 0;
+            background: #161b22;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .user-item:hover {
+            background: #1f242c;
+        }
+
+        .user-item .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .user-item .status-dot.online { background: #3fb950; }
+        .user-item .status-dot.busy { background: #f0883e; }
+        .user-item .status-dot.offline { background: #6e7681; }
+
+        .user-item .node-badge {
+            float: right;
+            font-size: 10px;
+            color: #8b949e;
+            background: #21262d;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        /* Main - Call Panel */
+        .main {
+            background: #0d1117;
+            border-right: 1px solid #21262d;
             padding: 20px;
+            display: flex;
+            flex-direction: column;
         }
 
-        .container { max-width: 520px; margin:0 auto; text-align:center; }
-
-        h1 { color:var(--accent); margin-bottom:8px; }
-
-        .status-bar {
-            padding:16px;
-            border-radius:14px;
-            margin:14px 0;
-            border:2px solid var(--border);
+        .call-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #21262d;
         }
 
-        .card {
-            background: var(--card);
-            border:1px solid var(--border);
-            border-radius:14px;
-            padding:16px;
-            margin:12px 0;
+        .call-header h2 {
+            margin: 0;
+            color: #58a6ff;
+        }
+
+        .call-status {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            background: #161b22;
+        }
+
+        .call-status.idle { color: #8b949e; }
+        .call-status.invite { color: #f0883e; }
+        .call-status.ringing { color: #d29922; }
+        .call-status.active { color: #3fb950; background: #0d2a1a; }
+        .call-status.ended { color: #f85149; }
+
+        .mic-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: #79c0ff;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 1000;
+            display: none;
+        }
+
+        .mic-level {
+            width: 100px;
+            height: 4px;
+            background: #30363d;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .mic-level-fill {
+            height: 100%;
+            background: #3fb950;
+            width: 0%;
+            transition: width 0.1s;
+        }
+
+        .fsm-visual {
+            display: flex;
+            gap: 8px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .fsm-state {
+            padding: 8px 16px;
+            background: #161b22;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #8b949e;
+            opacity: 0.5;
+        }
+
+        .fsm-state.active {
+            opacity: 1;
+            background: #1f3a5f;
+            color: #58a6ff;
+        }
+
+        .fsm-state.done {
+            opacity: 1;
+            color: #3fb950;
+            background: #0d2a1a;
+        }
+
+        .ice-info {
+            margin-top: 12px;
+            padding: 12px;
+            background: #161b22;
+            border-radius: 6px;
+            font-size: 11px;
+        }
+
+        .ice-info .label { color: #8b949e; }
+        .ice-info .value { color: #7ee787; }
+
+        .controls {
+            margin-top: auto;
+            padding-top: 20px;
+            border-top: 1px solid #21262d;
         }
 
         .btn {
-            padding:10px 16px;
-            border-radius:10px;
-            border:none;
-            cursor:pointer;
-            background:var(--accent);
-            color:white;
+            padding: 12px 24px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 4px;
+            transition: all 0.15s;
         }
 
-        .btn-danger { background:var(--danger); }
-        .btn-success { background:var(--success); }
+        .btn-invite { background: #238636; color: white; }
+        .btn-invite:hover { background: #2ea043; }
 
-        /* VU meter */
-        .vu {
-            display:flex;
-            justify-content:center;
-            gap:4px;
-            margin:12px 0;
-            height:40px;
-            align-items:flex-end;
+        .btn-reject { background: #da3633; color: white; }
+
+        .btn-bye { background: #f85149; color: white; }
+
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* Debug Panel */
+        .debug {
+            background: #0d1117;
+            padding: 16px;
+            overflow-y: auto;
         }
 
-        .bar {
-            width:4px;
-            background:var(--success);
-            height:6px;
-            transition:height 0.08s ease;
+        .debug h3 {
+            color: #8b949e;
+            font-size: 12px;
+            text-transform: uppercase;
+            margin: 0 0 12px 0;
         }
 
-        /* Push to talk */
-        .ptt {
-            margin-top:10px;
-            background: var(--warning);
+        .debug-entry {
+            font-size: 11px;
+            padding: 8px;
+            margin: 4px 0;
+            background: #161b22;
+            border-radius: 4px;
+            font-family: 'SF Mono', monospace;
+            word-break: break-all;
         }
 
-        .ptt.active {
-            background: var(--success);
+        .debug-entry .ts { color: #6e7681; }
+        .debug-entry .type { color: #d29922; }
+        .debug-entry .from { color: #f778ba; }
+        .debug-entry .to { color: #79c0ff; }
+        .debug-entry .meta { color: #7ee787; font-size: 10px; }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
         }
 
-        /* stats */
-        .stats {
-            font-size:12px;
-            text-align:left;
-            opacity:0.85;
-            margin-top:10px;
+        .modal-overlay.show { display: flex; }
+
+        .modal {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 24px;
+            text-align: center;
         }
 
-        .hidden { display:none; }
+        .modal h3 { margin: 0 0 16px 0; }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; }
+            .sidebar, .debug { height: 200px; }
+        }
     </style>
 </head>
-
 <body>
-<div class="container">
-    <h1>📞 ZeroPhone</h1>
 
-    <div id="status" class="status-bar">Idle</div>
+<div class="layout">
+    <!-- Sidebar: User List -->
+    <div class="sidebar">
+        <h3>Network Nodes</h3>
+        <div id="users"></div>
+    </div>
 
-    <div class="card">
-        <div class="vu" id="vu"></div>
+    <!-- Main: Call Panel -->
+    <div class="main">
+        <div class="call-header">
+            <h2>📡 ZeroPhone Control</h2>
+            <span class="call-status idle" id="globalStatus">IDLE</span>
+        </div>
 
-        <button class="btn ptt" id="pttBtn">🎙 Hold to Talk</button>
+        <div class="fsm-visual">
+            <span class="fsm-state" data-state="IDLE">IDLE</span>
+            <span class="fsm-state" data-state="INVITE">INVITE</span>
+            <span class="fsm-state" data-state="RINGING">RINGING</span>
+            <span class="fsm-state" data-state="ACTIVE">ACTIVE</span>
+            <span class="fsm-state" data-state="ENDED">ENDED</span>
+        </div>
 
-        <button class="btn btn-danger" onclick="endCall()">End Call</button>
+        <div class="ice-info" id="iceInfo" style="display:none;">
+            <div><span class="label">Network:</span> <span class="value" id="iceNetwork">-</span></div>
+            <div><span class="label">Relay:</span> <span class="value" id="iceRelay">-</span></div>
+            <div><span class="label">Boost:</span> <span class="value" id="iceBoost">-</span></div>
+        </div>
 
-        <div class="stats" id="stats">
-            jitter: -- ms<br>
-            packet loss: --%<br>
-            rtt: -- ms
+        <div class="controls">
+            <input id="targetUser" placeholder="Target User ID" style="
+                width: 100%;
+                padding: 12px;
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                color: #c9d1d9;
+                margin-bottom: 12px;
+            " />
+
+            <button class="btn btn-invite" onclick="sendINVITE()">📞 INVITE</button>
+            <button class="btn btn-bye" onclick="sendBYE()" disabled>End Call</button>
+            <button class="btn" onclick="testMicrophone()" style="background: #6e7681; color: white;">🎤 Test Mic</button>
+        </div>
+    </div>
+
+    <!-- Debug Panel -->
+    <div class="debug">
+        <h3>Signal Log</h3>
+        <div id="signalLog"></div>
+    </div>
+</div>
+
+<!-- Remote Audio Element (REQUIRED) -->
+<audio id="remoteAudio" autoplay playsinline style="display:none;"></audio>
+
+<!-- Incoming Call Modal -->
+<div class="modal-overlay" id="incomingModal">
+    <div class="modal">
+        <h3>📲 Incoming Call</h3>
+        <p id="callerInfo">Unknown caller</p>
+        <input type="hidden" id="incomingCallId" value="">
+        <div class="modal-buttons">
+            <button class="btn btn-invite" onclick="acceptCall()">Accept</button>
+            <button class="btn btn-reject" onclick="rejectCall()">Reject</button>
         </div>
     </div>
 </div>
 
+<!-- Microphone Level Indicator -->
+<div class="mic-indicator" id="micIndicator">
+    🎤 Microphone Level
+    <div class="mic-level">
+        <div class="mic-level-fill" id="micLevelFill"></div>
+    </div>
+</div>
+
 <script>
-let pc;
-let ws;
-let localStream;
-let audioCtx;
-let analyser;
-let dataArray;
-let micEnabled = false;
-let ptt = false;
-let statsInterval;
+// ZeroPhone Control Terminal JavaScript loaded
 
-/* ---------------------------
-   AUDIO: VU METER SETUP
-----------------------------*/
-function setupVU(stream) {
-    audioCtx = new AudioContext();
-    const source = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
+/* =====================================================
+   STATE: Call FSM (mirrors backend core/call_state_machine.go)
+   ===================================================== */
+const CallState = {
+    IDLE: 'IDLE',
+    INVITE: 'INVITE', 
+    RINGING: 'RINGING',
+    ACTIVE: 'ACTIVE',
+    ENDED: 'ENDED'
+};
 
-    analyser.fftSize = 64;
-    dataArray = new Uint8Array(analyser.frequencyBinCount);
+/* =====================================================
+   TRANSPORT: WebSocket Singleton
+   ===================================================== */
+let ws = null;
+let userId = 'user-' + Math.random().toString(36).substr(2, 8);
 
-    source.connect(analyser);
+/* =====================================================
+   STATE STORE: Multi-call support
+   ===================================================== */
+let appState = {
+    calls: {}, // callId → CallState object
+    users: [],
+    activeCallId: null, // currently focused call
+    localUserId: userId
+};
 
-    const vu = document.getElementById('vu');
-    vu.innerHTML = '';
+// 🔊 Global WebRTC state
+let pc = null;
+let localStream = null;
+let callID = null;
+let currentPeer = null;
+let pendingIceCandidates = []; // Buffer ICE candidates before PC is ready
 
-    for (let i = 0; i < 12; i++) {
-        const b = document.createElement('div');
-        b.className = 'bar';
-        vu.appendChild(b);
-    }
+// Audio elements for call feedback
+let ringingAudio = null;
+let audioUnlocked = false;
 
-    function draw() {
-        requestAnimationFrame(draw);
-        analyser.getByteFrequencyData(dataArray);
+// Global audio unlock (required by browser security)
+// 🔓 Unlock audio (required once per session)
+function unlockAudio() {
+    if (audioUnlocked) return;
 
-        document.querySelectorAll('.bar').forEach((bar, i) => {
-            const v = dataArray[i] || 0;
-            bar.style.height = (v / 4) + 'px';
-        });
-    }
-
-    draw();
-}
-
-/* ---------------------------
-   OPUS FORCE (BEST EFFORT)
-----------------------------*/
-function forceOpus(pc) {
-    const sender = pc.getSenders().find(s => s.track && s.track.kind === 'audio');
-    if (!sender) return;
-
-    const params = sender.getParameters();
-    const caps = RTCRtpSender.getCapabilities('audio');
-
-    if (caps && caps.codecs) {
-        const opus = caps.codecs.filter(c => c.mimeType.toLowerCase().includes('opus'));
-        if (opus.length) {
-            params.codecs = opus;
-            sender.setParameters(params);
-        }
-    }
-}
-
-/* ---------------------------
-   PACKET LOSS SIMULATION
-----------------------------*/
-function simulateLoss(stream) {
-    const track = stream.getAudioTracks()[0];
-
-    setInterval(() => {
-        if (!pc || pc.connectionState !== 'connected') return;
-
-        // 10% random drop simulation
-        if (Math.random() < 0.1) {
-            track.enabled = false;
-            setTimeout(() => track.enabled = true, 80);
-        }
-    }, 120);
-}
-
-/* ---------------------------
-   STATS (JITTER / LOSS)
-----------------------------*/
-async function startStats() {
-    statsInterval = setInterval(async () => {
-        if (!pc) return;
-
-        const stats = await pc.getStats();
-        let jitter = 0;
-        let packetsLost = 0;
-        let packetsRecv = 0;
-        let rtt = 0;
-
-        stats.forEach(report => {
-            if (report.type === 'inbound-rtp') {
-                jitter = report.jitter || 0;
-                packetsLost = report.packetsLost || 0;
-                packetsRecv = report.packetsReceived || 0;
-            }
-            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-                rtt = report.currentRoundTripTime || 0;
-            }
-        });
-
-        const loss = packetsLost + packetsRecv
-            ? (packetsLost / (packetsLost + packetsRecv) * 100).toFixed(1)
-            : 0;
-
-        document.getElementById('stats').innerHTML =
-            `jitter: ${(jitter*1000).toFixed(1)} ms<br>
-             packet loss: ${loss}%<br>
-             rtt: ${(rtt*1000).toFixed(0)} ms`;
-    }, 1000);
-}
-
-/* ---------------------------
-   PUSH TO TALK (HALF DUPLEX)
-----------------------------*/
-function setupPTT() {
-    const btn = document.getElementById('pttBtn');
-
-    function enable() {
-        ptt = true;
-        btn.classList.add('active');
-        if (localStream)
-            localStream.getAudioTracks().forEach(t => t.enabled = true);
-    }
-
-    function disable() {
-        ptt = false;
-        btn.classList.remove('active');
-        if (localStream)
-            localStream.getAudioTracks().forEach(t => t.enabled = false);
-    }
-
-    btn.addEventListener('mousedown', enable);
-    btn.addEventListener('mouseup', disable);
-    btn.addEventListener('touchstart', enable);
-    btn.addEventListener('touchend', disable);
-
-    // keyboard push-to-talk
-    window.addEventListener('keydown', e => {
-        if (e.code === 'Space') enable();
-    });
-
-    window.addEventListener('keyup', e => {
-        if (e.code === 'Space') disable();
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    ctx.resume().then(() => {
+        console.log("🔊 Audio unlocked");
+        audioUnlocked = true;
+    }).catch(err => {
+        console.error("Audio unlock failed:", err);
     });
 }
 
-/* ---------------------------
-   WEBRTC INIT (SIMPLIFIED)
-----------------------------*/
-async function startCall() {
-    localStream = await navigator.mediaDevices.getUserMedia({ audio:true });
-
-    setupVU(localStream);
-    simulateLoss(localStream);
-    setupPTT();
-
+// 🎧 Create PeerConnection (core WebRTC engine)
+function createPeerConnection() {
     pc = new RTCPeerConnection({
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+        iceServers: [
+            { urls: "stun:stun.wadiem.cloudns.be" },
+            { urls: "stun:stun.l.google.com:19302" }
+        ]
     });
 
-    localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+    console.log("WEBRTC: PeerConnection created");
 
-    pc.ontrack = e => {
-        const audio = document.createElement('audio');
-        audio.srcObject = e.streams[0];
-        audio.autoplay = true;
-        document.body.appendChild(audio);
+    // 🔊 Handle remote audio tracks
+    pc.ontrack = (event) => {
+        console.log("WEBRTC: Remote track received - kind:", event.track.kind, "streams:", event.streams.length);
+
+        if (event.streams.length > 0) {
+            const audio = document.getElementById("remoteAudio");
+            if (audio) {
+                audio.srcObject = event.streams[0];
+                audio.muted = false;
+                audio.volume = 1.0;
+                audio.playsInline = true;
+
+                console.log("AUDIO STATE:", {
+                    muted: audio.muted,
+                    volume: audio.volume,
+                    paused: audio.paused
+                });
+
+                audio.play().then(() => {
+                    console.log("WEBRTC: Remote audio playing successfully");
+
+                    // Start audio energy monitoring
+                    startAudioEnergyMonitoring(event.streams[0]);
+                }).catch(err => {
+                    console.warn("WEBRTC: Autoplay blocked, audio will play after user interaction:", err.message);
+                });
+
+                // Store reference for cleanup
+                audio._stream = event.streams[0];
+            }
+        }
     };
 
+    // ❄️ Handle outgoing ICE candidates
+    pc.onicecandidate = (event) => {
+        if (event.candidate) {
+            console.log("❄️ Sending ICE candidate:", event.candidate.candidate.substring(0, 50) + "...");
+            sendSignal({
+                type: "ICE",
+                call_id: callID,
+                to: currentPeer,
+                from: appState.localUserId,
+                data: {
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex
+                }
+            });
+        }
+    };
+
+    // 🔍 Connection state monitoring
     pc.onconnectionstatechange = () => {
-        document.getElementById('status').innerText = pc.connectionState;
+        console.log("WEBRTC: Connection state:", pc.connectionState);
     };
 
-    forceOpus(pc);
-    startStats();
+    pc.oniceconnectionstatechange = () => {
+        console.log("WEBRTC: ICE connection state:", pc.iceConnectionState);
+    };
+
+    pc.oniceconnectionstatechange = () => {
+        console.log("WEBRTC: ICE connection state:", pc.iceConnectionState);
+    };
 }
 
-/* ---------------------------
-   END CALL
-----------------------------*/
+// 🎤 Get microphone and attach to PeerConnection
+async function initLocalMedia() {
+    try {
+        console.log("WEBRTC: Requesting microphone access");
+        localStream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+            video: false
+        });
+
+        console.log("WEBRTC: Local stream obtained with", localStream.getTracks().length, "tracks");
+
+        if (pc && localStream) {
+            const tracks = localStream.getTracks();
+            console.log("WEBRTC: Adding", tracks.length, "local tracks to PeerConnection");
+
+            tracks.forEach(track => {
+                console.log("WEBRTC: Adding local track:", track.kind, track.label, "enabled:", track.enabled);
+                pc.addTrack(track, localStream);
+            });
+
+            // Verify tracks were added
+            setTimeout(() => {
+                const senders = pc.getSenders();
+                console.log("WEBRTC: PeerConnection now has", senders.length, "senders");
+                senders.forEach((sender, i) => {
+                    if (sender.track) {
+                        console.log("WEBRTC: Sender", i, "- track:", sender.track.kind, "enabled:", sender.track.enabled);
+                    }
+                });
+            }, 100);
+        } else {
+            console.error("WEBRTC: No PeerConnection or localStream available");
+        }
+
+        return true;
+    } catch(err) {
+        console.error("WEBRTC: Failed to get microphone:", err.message);
+        return false;
+    }
+}
+
+function startMicMonitoring() {
+    try {
+        const indicator = document.getElementById('micIndicator');
+        const levelFill = document.getElementById('micLevelFill');
+
+        if (!indicator || !levelFill) return;
+
+        navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const analyser = audioContext.createAnalyser();
+            const microphone = audioContext.createMediaStreamSource(stream);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+            analyser.fftSize = 256;
+            microphone.connect(analyser);
+
+            indicator.style.display = 'block';
+
+            function updateMicLevel() {
+                analyser.getByteFrequencyData(dataArray);
+                const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+                const level = Math.min(100, (average / 255) * 100);
+                levelFill.style.width = level + '%';
+
+                if (audioUnlocked) {
+                    requestAnimationFrame(updateMicLevel);
+                }
+            }
+
+            updateMicLevel();
+
+            log('AUDIO', 'Microphone monitoring started');
+
+        }).catch(err => {
+            log('AUDIO', 'Could not start microphone monitoring:', err.message);
+        });
+
+    } catch(e) {
+        log('AUDIO', 'Mic monitoring setup failed:', e);
+    }
+}
+
+// CallState object structure
+function createCallState(callId, from, to) {
+    return {
+        callId: callId,
+        state: CallState.IDLE,
+        from: from || null,
+        to: to || null,
+        sdp: null,
+        iceCandidates: [],
+        iceStrategy: null,
+        peerConnection: null,
+        localStream: null,
+        history: [],
+        created: Date.now()
+    };
+}
+
+/* =====================================================
+   LAYER 1: TRANSPORT
+   ===================================================== */
+function connectWS() {
+    ws = new WebSocket(`wss://${location.host}/ws/${userId}`);
+
+    ws.onopen = () => {
+        log('TRANSPORT', 'WebSocket connected as ' + userId);
+        appState.localUserId = userId;
+    };
+
+    ws.onmessage = async (evt) => {
+        try {
+            const signal = JSON.parse(evt.data);
+            await handleSignal(signal);
+        } catch(e) {
+            log('TRANSPORT', 'Parse error:', e.message);
+        }
+    };
+
+    ws.onclose = () => {
+        log('TRANSPORT', 'WebSocket disconnected');
+        setTimeout(connectWS, 3000);
+    };
+
+    ws.onerror = (e) => {
+        log('TRANSPORT', 'WebSocket error');
+    };
+}
+
+// 📡 Send signal helper
+function sendSignal(signal) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        console.error('TRANSPORT: WebSocket not connected');
+        return;
+    }
+    console.log('📡 Sending signal:', signal.type, 'to:', signal.to);
+    ws.send(JSON.stringify(signal));
+}
+
+/* =====================================================
+   LAYER 2: SIGNAL ROUTER (frontend mirror of backend)
+   ===================================================== */
+async function handleSignal(signal) {
+    const callId = signal.call_id || signal.callId;
+    
+    log('SIGNAL', signal.type, signal.from || '?', signal.to || '?', callId || '');
+    
+    // Route to appropriate handler
+    switch(signal.type) {
+        case 'USERS':
+            updateUserPresence(signal.users || []);
+            break;
+        default:
+            // All call-related signals
+            handleCallSignal(signal);
+            break;
+    }
+}
+
+/* =====================================================
+   LAYER 3: CALL STATE STORE (mirrors backend FSM)
+   ===================================================== */
+function getCallState(callId) {
+    return appState.calls[callId];
+}
+
+function setCallState(callId, state, peerId = null, isOutgoing = false) {
+    let call = appState.calls[callId];
+    if (!call) {
+        if (isOutgoing) {
+            // Outgoing call: from = local user, to = peer
+            call = createCallState(callId, appState.localUserId, peerId);
+        } else {
+            // Incoming call: from = peer, to = local user
+            call = createCallState(callId, peerId, appState.localUserId);
+        }
+        appState.calls[callId] = call;
+    }
+
+    // Record history
+    call.history.push({
+        state: call.state,
+        timestamp: Date.now(),
+        signal: state
+    });
+
+    // Update state
+    call.state = state;
+
+    // Auto-focus new calls
+    if (state === CallState.INVITE && !appState.activeCallId) {
+        appState.activeCallId = callId;
+    }
+
+    updateCallDisplay();
+    updateGlobalStatus();
+}
+
+function removeCall(callId) {
+    delete appState.calls[callId];
+    if (appState.activeCallId === callId) {
+        appState.activeCallId = null;
+        // Auto-focus next active call
+        const activeCalls = Object.values(appState.calls).filter(c => 
+            c.state !== CallState.IDLE && c.state !== CallState.ENDED
+        );
+        if (activeCalls.length > 0) {
+            appState.activeCallId = activeCalls[0].callId;
+        }
+    }
+    updateCallDisplay();
+}
+
+/* =====================================================
+   LAYER 5: UI CONTROLLERS
+   ===================================================== */
+function updateCallDisplay() {
+    // Update active call focus
+    const activeCall = appState.calls[appState.activeCallId];
+    const globalStatus = document.getElementById('globalStatus');
+    const endCallBtn = document.querySelector('.btn-bye');
+
+    if (activeCall) {
+        globalStatus.textContent = `${activeCall.state} (${activeCall.callId.slice(0,8)})`;
+        globalStatus.className = 'call-status ' + activeCall.state.toLowerCase();
+
+        // Enable end call button for active calls
+        if (endCallBtn) {
+            endCallBtn.disabled = false;
+            endCallBtn.textContent = 'End Call';
+        }
+
+        // Update FSM visualization
+        updateFSMVisualization(activeCall);
+
+        // Update ICE info
+        updateICEDisplay(activeCall.iceStrategy);
+
+    } else {
+        globalStatus.textContent = 'IDLE';
+        globalStatus.className = 'call-status idle';
+
+        // Disable end call button when no active call
+        if (endCallBtn) {
+            endCallBtn.disabled = true;
+            endCallBtn.textContent = 'End Call';
+        }
+    }
+
+    // Update call list in debug panel
+    updateCallList();
+}
+
+function updateFSMVisualization(call) {
+    document.querySelectorAll('.fsm-state').forEach(el => {
+        const state = el.dataset.state;
+        el.classList.remove('active', 'done');
+        
+        if (state === call.state) {
+            el.classList.add('active');
+        } else {
+            // Mark previous states as done
+            const states = ['IDLE', 'INVITE', 'RINGING', 'ACTIVE', 'ENDED'];
+            const currentIdx = states.indexOf(call.state);
+            const stateIdx = states.indexOf(state);
+            if (stateIdx < currentIdx) {
+                el.classList.add('done');
+            }
+        }
+    });
+}
+
+function updateICEDisplay(iceStrategy) {
+    const container = document.getElementById('iceInfo');
+    if (!iceStrategy) {
+        container.style.display = 'none';
+        return;
+    }
+    
+    container.style.display = 'block';
+    document.getElementById('iceNetwork').textContent = iceStrategy.preferred_network || 'unknown';
+    document.getElementById('iceRelay').textContent = iceStrategy.use_relay ? iceStrategy.relay_node : 'none';
+    document.getElementById('iceBoost').textContent = iceStrategy.priority_boost || 0;
+}
+
+function updateUserPresence(users) {
+    appState.users = users;
+    const container = document.getElementById('users');
+    container.innerHTML = '';
+
+    users.forEach(u => {
+        // Don't show the local user in the user list
+        if (u.id === appState.localUserId) return;
+
+        const div = document.createElement('div');
+        div.className = 'user-item';
+        let statusClass = 'offline';
+        if (u.status === 'online') statusClass = 'online';
+        else if (u.status === 'busy') statusClass = 'busy';
+
+        div.innerHTML = `
+            <span class="status-dot ${statusClass}"></span>
+            ${u.name || u.id}
+            ${u.node ? `<span class="node-badge">🌍</span>` : ''}
+        `;
+        div.onclick = () => {
+            const targetInput = document.getElementById('targetUser');
+            if (targetInput) {
+                targetInput.value = u.id;
+            }
+        };
+        container.appendChild(div);
+    });
+}
+
+function updateCallList() {
+    // Add call list to debug panel
+    const calls = Object.values(appState.calls);
+    if (calls.length === 0) return;
+    
+    const debugPanel = document.getElementById('signalLog');
+    const callList = document.createElement('div');
+    callList.className = 'debug-entry';
+    callList.innerHTML = '<strong>Active Calls:</strong><br>' + 
+        calls.map(c => `${c.callId.slice(0,8)}: ${c.state} (${c.from}↔${c.to})`).join('<br>');
+    
+    debugPanel.insertBefore(callList, debugPanel.firstChild);
+}
+
+/* =====================================================
+   CALL SIGNAL HANDLERS
+   ===================================================== */
+// 📥 Handle incoming signals (WebRTC-aware)
+function handleCallSignal(signal) {
+    console.log("📡 Processing signal:", signal.type, "call:", signal.call_id, "raw signal:", signal);
+
+    // SDP and candidate are now direct fields in the signal
+
+    switch(signal.type) {
+        case 'INVITE':
+            onINVITE(signal);
+            break;
+        case 'TRYING':
+            setCallState(signal.call_id, CallState.INVITE);
+            break;
+        case 'RINGING':
+            setCallState(signal.call_id, CallState.RINGING);
+            break;
+        case 'OK':
+            onOK(signal);
+            break;
+        case 'REJECT':
+            onREJECT(signal);
+            break;
+        case 'BYE':
+            onBYE(signal);
+            break;
+        case 'SDP':
+            // SDP is now handled inline with OK signal
+            break;
+        case 'ICE':
+            onICE(signal);
+            break;
+    }
+
+    // Store ICE strategy metadata
+    if (signal._ice) {
+        const call = getCallState(signal.call_id);
+        if (call) {
+            call.iceStrategy = signal._ice;
+        }
+    }
+}
+
+// 📨 Handle incoming INVITE
+async function onINVITE(signal) {
+    console.log("📞 Received INVITE from", signal.from, "signal:", signal);
+
+    // Unlock audio for incoming call
+    unlockAudio();
+
+    callID = signal.call_id;
+    currentPeer = signal.from;
+
+    // Store SDP offer for later use - SDP comes from backend in data field
+    console.log("Processing INVITE signal:", signal);
+    const call = createCallState(callID, signal.from, appState.localUserId);
+    call.sdp = signal.sdp; // This should now be available after data merging
+    appState.calls[callID] = call;
+
+    console.log("Stored call state with SDP:", call.sdp ? "YES (" + (call.sdp ? call.sdp.substring(0, 50) + "..." : "null") + ")" : "NO", call);
+
+    setCallState(callID, CallState.INVITE, signal.from, false); // incoming
+    showIncomingModal(signal.from, callID);
+}
+
+// ✅ Handle call acceptance (SDP answer)
+async function onOK(signal) {
+    console.log("✅ Call accepted, processing SDP answer, signal:", signal);
+
+    try {
+        if (signal.sdp) {
+            console.log("📡 Setting remote description with answer SDP:", signal.sdp.substring(0, 100) + "...");
+            await pc.setRemoteDescription({
+                type: "answer",
+                sdp: signal.sdp
+            });
+            console.log("✅ Call fully established, PC state:", pc.signalingState, "ICE state:", pc.iceConnectionState);
+        } else {
+            console.error("❌ No SDP in OK signal!");
+        }
+    } catch(err) {
+        console.error("❌ Failed to process OK signal:", err);
+    }
+}
+
+function onREJECT(signal) {
+    log('CALL', 'Call rejected:', signal.call_id);
+    setCallState(signal.call_id, CallState.ENDED);
+    cleanupCall(signal.call_id);
+}
+
+function onBYE(signal) {
+    log('CALL', 'Call ended:', signal.call_id);
+    setCallState(signal.call_id, CallState.ENDED);
+    cleanupCall(signal.call_id);
+}
+
+// ❄️ Handle incoming ICE candidates
+async function onICE(signal) {
+    console.log("❄️ Received ICE signal:", signal);
+
+    let iceData = null;
+
+    // Check if ICE data is in signal.data
+    if (signal.data) {
+        try {
+            iceData = typeof signal.data === 'string' ? JSON.parse(signal.data) : signal.data;
+            console.log("❄️ Parsed ICE data:", iceData);
+        } catch(e) {
+            console.warn("❄️ Failed to parse ICE data:", e);
+            return;
+        }
+    } else if (signal.candidate) {
+        // Fallback for old format
+        iceData = { candidate: signal.candidate };
+    }
+
+    if (!iceData || !iceData.candidate) {
+        console.log("❄️ Skipping ICE - no candidate data found");
+        return;
+    }
+
+    // If no PeerConnection yet, buffer the candidate data
+    if (!pc) {
+        console.log("❄️ Buffering ICE candidate - PC not ready yet");
+        pendingIceCandidates.push(iceData);
+        return;
+    }
+
+    // Add the candidate to the PeerConnection
+    try {
+        const candidate = new RTCIceCandidate(iceData);
+        await pc.addIceCandidate(candidate);
+        console.log("❄️ Successfully added ICE candidate");
+    } catch(err) {
+        console.error("❄️ Failed to add ICE candidate:", err);
+    }
+}
+
+// Process buffered ICE candidates once PC is ready
+async function processPendingIceCandidates() {
+    if (!pc || pendingIceCandidates.length === 0) return;
+
+    console.log(`❄️ Processing ${pendingIceCandidates.length} buffered ICE candidates`);
+
+    for (const iceData of pendingIceCandidates) {
+        try {
+            const candidate = new RTCIceCandidate(iceData);
+            await pc.addIceCandidate(candidate);
+            console.log("❄️ Added buffered ICE candidate");
+        } catch(err) {
+            console.error("❄️ Failed to add buffered ICE candidate:", err);
+        }
+    }
+
+    pendingIceCandidates = [];
+}
+
+function cleanupCall(callId) {
+    console.log("🧹 Cleaning up call", callId);
+
+    // Close PeerConnection
+    if (pc) {
+        pc.close();
+        pc = null;
+    }
+
+    // Stop local media tracks
+    if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+    }
+
+    // Stop remote audio
+    const remoteAudio = document.getElementById("remoteAudio");
+    if (remoteAudio && remoteAudio._stream) {
+        remoteAudio._stream.getTracks().forEach(track => track.stop());
+        remoteAudio.srcObject = null;
+    }
+
+    // Reset global state
+    callID = null;
+    currentPeer = null;
+
+    // Remove call state after delay
+    setTimeout(() => removeCall(callId), 5000);
+}
+
+/* =====================================================
+   USER ACTIONS
+   ===================================================== */
+// 📞 Start call (INVITE)
+async function sendINVITE() {
+    const targetInput = document.getElementById('targetUser');
+    if (!targetInput) return;
+
+    const target = targetInput.value.trim();
+    if (!target) return;
+
+    // Unlock audio first
+    unlockAudio();
+
+    callID = crypto.randomUUID();
+    currentPeer = target;
+    appState.activeCallId = callID;
+
+    setCallState(callID, CallState.INVITE, target, true); // outgoing
+
+    // Create PeerConnection and get media
+    createPeerConnection();
+    const mediaSuccess = await initLocalMedia();
+
+    if (!mediaSuccess) {
+        log('CALL', 'Failed to get microphone - cannot make call');
+        return;
+    }
+
+    // Create and send offer
+    try {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        sendSignal({
+            type: 'INVITE',
+            call_id: callID,
+            from: appState.localUserId,
+            to: target,
+            sdp: offer.sdp
+        });
+
+        console.log("📞 INVITE sent with SDP offer");
+
+        // Process any buffered ICE candidates now that local description is set
+        setTimeout(() => processPendingIceCandidates(), 100);
+    } catch(err) {
+        console.error("Failed to create offer:", err);
+    }
+}
+
+// ✅ Accept incoming call
+async function acceptCall() {
+    console.log("📞 Accepting call");
+
+    const incomingCallId = document.getElementById('incomingCallId');
+    if (!incomingCallId) {
+        console.error("No incomingCallId element found!");
+        return;
+    }
+
+    const callId = incomingCallId.value;
+    console.log("Using callId from modal:", callId, "global callID:", callID);
+    hideIncomingModal();
+
+    setCallState(callId, CallState.ACTIVE);
+
+    // Create PeerConnection and get media
+    createPeerConnection();
+    const mediaSuccess = await initLocalMedia();
+
+    if (!mediaSuccess) {
+        log('CALL', 'Failed to get microphone - rejecting call');
+        rejectCall();
+        return;
+    }
+
+    // Set remote description from INVITE SDP
+    try {
+        const call = getCallState(callId);
+        console.log("AcceptCall - call:", call, "callId:", callId, "pc signaling state:", pc.signalingState);
+
+        if (!call) {
+            console.error("No call state found for callId:", callId);
+            return;
+        }
+
+        if (!call.sdp) {
+            console.error("No SDP found in call state! Call:", call);
+            return;
+        }
+
+        console.log("Setting remote description with SDP:", call.sdp.substring(0, 100) + "...");
+
+        await pc.setRemoteDescription({
+            type: "offer",
+            sdp: call.sdp
+        });
+
+        console.log("Remote description set successfully, PC state:", pc.signalingState);
+
+        // Process any buffered ICE candidates now that remote description is set
+        await processPendingIceCandidates();
+
+        // Create and send answer
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        sendSignal({
+            type: 'OK',
+            call_id: callId,
+            from: appState.localUserId,
+            to: currentPeer,
+            sdp: answer.sdp
+        });
+
+        console.log("📞 Call accepted, sent SDP answer");
+    } catch(err) {
+        console.error("Failed to accept call:", err);
+    }
+}
+
+function rejectCall() {
+    const incomingCallId = document.getElementById('incomingCallId');
+    if (!incomingCallId) return;
+
+    const callId = incomingCallId.value;
+    hideIncomingModal();
+
+    const call = getCallState(callId);
+    if (call) {
+        sendSignal({
+            type: 'REJECT',
+            call_id: callId,
+            from: appState.localUserId,
+            to: call.from
+        });
+    }
+
+    setCallState(callId, CallState.ENDED);
+    cleanupCall(callId);
+}
+
+function sendBYE() {
+    endCall();
+}
+
+async function testMicrophone() {
+    try {
+        log('AUDIO', 'Testing microphone access...');
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        log('AUDIO', 'Microphone access granted, tracks:', stream.getTracks().length);
+
+        // Create a test audio element
+        const testAudio = new Audio();
+        testAudio.srcObject = stream;
+        testAudio.autoplay = true;
+
+        testAudio.play().then(() => {
+            log('AUDIO', 'Test audio playing - you should hear yourself!');
+            setTimeout(() => {
+                testAudio.pause();
+                stream.getTracks().forEach(track => track.stop());
+                log('AUDIO', 'Test audio stopped');
+            }, 3000);
+        }).catch(err => {
+            log('AUDIO', 'Test audio failed:', err.message);
+        });
+
+    } catch(err) {
+        log('AUDIO', 'Microphone test failed:', err.message);
+    }
+}
+
+// 🔚 End call and cleanup
 function endCall() {
-    if (pc) pc.close();
-    if (statsInterval) clearInterval(statsInterval);
-    document.getElementById('status').innerText = "Ended";
+    if (!callID) return;
+
+    console.log("📴 Ending call", callID);
+
+    sendSignal({
+        type: 'BYE',
+        call_id: callID,
+        from: appState.localUserId,
+        to: currentPeer
+    });
+
+    setCallState(callID, CallState.ENDED);
+    cleanupCall(callID);
 }
 
-startCall();
+/* =====================================================
+   UI HELPERS
+   ===================================================== */
+function showIncomingModal(from, callId) {
+    const callerInfo = document.getElementById('callerInfo');
+    const incomingCallId = document.getElementById('incomingCallId');
+    const incomingModal = document.getElementById('incomingModal');
+
+    if (callerInfo) callerInfo.textContent = from + ' is calling...';
+    if (incomingCallId) incomingCallId.value = callId;
+    if (incomingModal) incomingModal.classList.add('show');
+
+    // Show visual indicator immediately
+    showVisualRing();
+
+    // Play audio ring only if already unlocked
+    if (audioUnlocked) {
+        playRingingSound();
+    } else {
+        log('AUDIO', 'Ringing blocked - waiting for user interaction');
+    }
+}
+
+function hideIncomingModal() {
+    const incomingModal = document.getElementById('incomingModal');
+    if (incomingModal) {
+        incomingModal.classList.remove('show');
+    }
+    // Stop ringing sound
+    stopRingingSound();
+}
+
+function updateGlobalStatus() {
+    // Global status is handled in updateCallDisplay
+}
+
+/* =====================================================
+   DEBUG LOGGING
+   ===================================================== */
+function log(component, ...args) {
+    const container = document.getElementById('signalLog');
+    const entry = document.createElement('div');
+    entry.className = 'debug-entry';
+    
+    const ts = new Date().toLocaleTimeString();
+    let html = `<span class="ts">[${ts}]</span> `;
+    html += `<span class="type">${component}</span> `;
+    
+    args.forEach(arg => {
+        if (typeof arg === 'string') {
+            html += `<span class="from">${arg}</span> `;
+        } else if (typeof arg === 'object') {
+            html += `<span class="meta">${JSON.stringify(arg)}</span> `;
+        } else {
+            html += `${arg} `;
+        }
+    });
+    
+    entry.innerHTML = html;
+    container.insertBefore(entry, container.firstChild);
+    
+    // Keep only last 50
+    while (container.children.length > 50) {
+        container.removeChild(container.lastChild);
+    }
+    
+    console.log(`[${component}]`, ...args);
+}
+
+/* =====================================================
+   INIT
+   ===================================================== */
+connectWS();
+
+// Global audio unlock on any user interaction
+document.addEventListener("click", unlockAudio, { once: true });
+document.addEventListener("touchstart", unlockAudio, { once: true });
+document.addEventListener("keydown", unlockAudio, { once: true });
+
+// Additional audio unlock for remote audio element
+document.addEventListener("click", () => {
+    const audio = document.getElementById("remoteAudio");
+    if (audio && audio.paused) {
+        audio.play().catch(() => {});
+    }
+}, { once: true });
+
+// Audio energy monitoring
+function startAudioEnergyMonitoring(stream) {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const analyser = audioContext.createAnalyser();
+        const microphone = audioContext.createMediaStreamSource(stream);
+
+        analyser.fftSize = 256;
+        microphone.connect(analyser);
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+        console.log("🎵 Started audio energy monitoring");
+
+        const monitor = () => {
+            analyser.getByteFrequencyData(dataArray);
+            const sum = dataArray.reduce((a, b) => a + b, 0);
+            const average = sum / dataArray.length;
+
+            // Log energy levels periodically
+            if (Math.random() < 0.1) { // Log ~10% of the time to avoid spam
+                console.log("🎵 Audio energy:", average.toFixed(2), "max:", Math.max(...dataArray));
+            }
+
+            if (average > 0) {
+                console.log("🎵 AUDIO DETECTED! Energy level:", average.toFixed(2));
+            }
+
+            requestAnimationFrame(monitor);
+        };
+
+        monitor();
+    } catch(e) {
+        console.error("🎵 Audio monitoring failed:", e);
+    }
+}
+
+// Poll for users periodically
+setInterval(() => {
+    fetch('/presence')
+        .then(r => r.json())
+        .then(updateUserPresence)
+        .catch(() => {});
+}, 5000);
+
+log('INIT', 'ZeroPhone Control Terminal initialized - Multi-call support enabled');
+
+/* =====================================================
+   AUDIO FEEDBACK
+   ===================================================== */
+function playRingingSound() {
+    try {
+        // Simple beep using oscillator - only works after user gesture
+        if (window.AudioContext || window.webkitAudioContext) {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            // Check if audio context needs to be resumed (required by browsers)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().then(() => {
+                    createRingingTone(audioContext);
+                }).catch(e => {
+                    log('AUDIO', 'Could not resume audio context:', e.message);
+                    // Fallback: no audio, just visual indicator
+                    showVisualRing();
+                });
+            } else {
+                createRingingTone(audioContext);
+            }
+        } else {
+            // Fallback for browsers without Web Audio
+            showVisualRing();
+        }
+    } catch(e) {
+        log('AUDIO', 'Could not play ringing sound:', e.message);
+        showVisualRing();
+    }
+}
+
+function createRingingTone(audioContext) {
+    try {
+        if (ringingAudio) {
+            ringingAudio.pause();
+        }
+
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.type = 'sine';
+
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 1); // Play for 1 second
+
+        // Store for cleanup
+        ringingAudio = { _oscillator: oscillator, _audioContext: audioContext };
+
+        // Schedule next ring after 3 seconds of silence (only if audio still unlocked)
+        setTimeout(() => {
+            if (ringingAudio && audioUnlocked) {
+                createRingingTone(audioContext);
+            }
+        }, 3000);
+
+    } catch(e) {
+        log('AUDIO', 'Error creating ringing tone:', e.message);
+        showVisualRing();
+    }
+}
+
+function showVisualRing() {
+    // Visual indicator when audio is not available
+    const modal = document.getElementById('incomingModal');
+    if (modal) {
+        modal.style.animation = 'pulse 1s infinite';
+    }
+}
+
+function stopRingingSound() {
+    try {
+        if (ringingAudio) {
+            if (ringingAudio._oscillator) {
+                ringingAudio._oscillator.stop();
+            }
+            ringingAudio.pause();
+            ringingAudio = null;
+        }
+    } catch(e) {
+        log('AUDIO', 'Error stopping ringing sound:', e.message);
+    }
+}
 </script>
+
 </body>
 </html>

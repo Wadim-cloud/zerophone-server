@@ -1,233 +1,260 @@
-# ZeroPhone
+# ZeroPhone v2.0 — Distributed Telecom System
 
-A distributed VoIP signaling server with WebRTC voice calling. Nodes on the same ZeroTier network can discover each other and make audio calls.
+A complete distributed signaling + routing system for WebRTC communication with cluster-aware call routing.
 
-## Features
+## Architecture Overview
 
-- ZeroTier network-based node discovery
-- WebRTC voice calling (audio only)
-- Real-time signaling via WebSockets + HTTP polling
-- SQLite persistence for nodes, calls, and message queues
-- Call timeout handling (auto-reject after 60 seconds)
-- Docker support for easy deployment
-- **Modern dark-themed web UI** with real-time updates
-- **TUI CLI client** for terminal-based node management and calling
+```
+Frontend (Browser) ↔ Backend (Go) ↔ Cluster (ZMQ + ZeroTier)
+     ↓                  ↓                    ↓
+Control Terminal   Signal Router       Route Gossip
+   ↓                 ↓                    ↓
+  WebRTC Engine   SIP FSM Mirror     Dijkstra Paths
+   ↓                 ↓                    ↓
+   Audio           Call States        NAT Awareness
+```
 
 ## Quick Start
 
-### Using Docker Compose (Recommended)
+### 1. Build and Run
 
 ```bash
-docker-compose up -d
+cd zerophone
+go run .
 ```
 
-The server will be available at `http://localhost:8080`
+Server starts on `http://localhost:9443`
 
-### Using Docker
+### 2. Access Control Terminal
 
-### Manual Build
+Open `http://localhost:9443/` in your browser:
+
+- **Landing Page**: System overview and feature status
+- **Control Terminal** (`/call.html`): Multi-call signaling interface
+- **Debug Panel** (`/debug.html`): Network observability
+
+### 3. Enable Clustering (Optional)
+
+Set environment variables for cluster mode:
 
 ```bash
-go build -o zerophone .
-./zerophone --db zerophone.db
+export ZEROPHONE_CLUSTER=1
+export ZEROTIER_IP=10.x.x.x  # Your ZeroTier IP
+go run .
 ```
 
-## Clients
+## Key Features
 
-### Web Client
+### 🚀 Multi-Call Support
+- Handle multiple simultaneous calls
+- Per-call state machines mirroring backend FSM
+- Call history and state visualization
 
-Open `http://your-server:8080` in any modern browser:
+### 🧠 Distributed Routing
+- Route gossip protocol shares network metrics
+- Dijkstra pathfinding for multi-hop routing
+- Load-aware call distribution
 
-1. Enter your ZeroTier Network ID (16-digit hex), your Node ID, and your Name
-2. Click **Register**
-3. Other nodes on the same ZeroTier network will appear in the list
-4. Click **Call** to initiate a voice call
-5. Accept/Reject incoming calls via on-screen prompts
+### 🌍 NAT Awareness
+- Automatic NAT type detection
+- TURN/STUN capability detection
+- ICE strategy optimization per call
 
-**Features:**
-- Real-time WebSocket connection indicator
-- Auto-refresh node list every 5 seconds
-- Incoming call ringtone and overlay
-- Active call timer and status
-- Toast notifications for events
+### 📡 Real-Time Signaling
+- SIP-like state machine (INVITE → RINGING → ACTIVE → BYE)
+- WebRTC SDP/ICE exchange
+- Cluster-aware routing metadata
 
-### CLI Client
+## Frontend Architecture
 
-A terminal-based client built with Go:
+### 5-Layer Design
 
-```bash
-# Clone and build
-git clone https://github.com/your-org/zerophone-cli.git
-cd zerophone-cli
-go build -o zerophone-cli .
+1. **Transport Layer**: WebSocket connection with reconnect logic
+2. **Signal Router**: Frontend mirror of backend signal routing
+3. **Call State Store**: Multi-call state management with history
+4. **WebRTC Engine**: Peer connection per call with ICE optimization
+5. **UI Layer**: Control terminal with FSM visualization
 
-# Configure (create ~/.zerophone-cli.json)
-cat > ~/.zerophone-cli.json <<EOF
-{
-  "network_id": "a84ac5c123456789",
-  "node_id": "your-zerotier-node-id",
-  "name": "Your Name",
-  "server_addr": "http://localhost:8080"
-}
-EOF
+### Signal Flow
 
-# Run
-./zerophone-cli
+```
+User Action → Signal Router → State Store → WebRTC Engine → UI Update
+        ↓
+   WebSocket
+        ↓
+   Backend Signal Router → SIP FSM → Cluster Resolver → ZMQ Transport
 ```
 
-**Controls:**
-- `↑/↓` — Select node
-- `Enter` — Call selected node / End active call
-- `a` — Answer incoming call
-- `R` — Reject incoming call
-- `r` — Refresh node list
-- `q` — Quit
+## API Endpoints
 
-The CLI displays online/offline status, auto-refreshes every 5s, and shows call timers.
+### Core Endpoints
+- `GET /` - Landing page
+- `GET /call.html` - Control terminal
+- `GET /debug.html` - Debug panel
 
-## API Reference
+### Signaling Endpoints
+- `WS /ws/{user_id}` - WebSocket signaling connection
+- `POST /call/signal` - HTTP signaling fallback
 
-### POST /register
+### Status Endpoints
+- `GET /status` - System status
+- `GET /nodes` - Cluster node list
+- `GET /presence` - User presence
+- `GET /ice/servers` - ICE server configuration
 
-Register a new node (requires ZeroTier network ID):
-
-```json
-{
-  "id": "node-1",
-  "name": "My Node",
-  "network_id": "a84ac5c123456789",
-  "capabilities": ["audio"]
-}
-```
-
-### GET /nodes?network_id=xxx
-
-List nodes on a specific ZeroTier network.
-
-### POST /signal
-
-Send signaling messages (call, WebRTC SDP, ICE candidates):
-
-```json
-{
-  "type": "CALL_REQUEST",
-  "from_id": "node-1",
-  "to_id": "node-2",
-  "call_id": "uuid-1234"
-}
-```
-
-Types: `CALL_REQUEST`, `CALL_ACCEPT`, `CALL_REJECT`, `CALL_END`, `SDP_OFFER`, `SDP_ANSWER`, `ICE_CANDIDATE`
-
-### GET /poll/{node_id}
-
-Long-poll for queued messages (legacy fallback).
-
-### GET /ws/{node_id}
-
-WebSocket endpoint for real-time signaling.
+### Cluster Endpoints
+- `GET /cluster/status` - Cluster status
+- `GET /cluster/nodes` - Cluster nodes
+- `GET /cluster/peers` - Cluster peers
 
 ## Configuration
 
-- `--addr`: Listen address (default: `:8080`)
-- `--db`: SQLite database path (default: `zerophone.db`)
+### Environment Variables
 
-## Docker Deployment
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ZEROPHONE_CLUSTER` | Enable cluster mode | `0` |
+| `ZEROTIER_IP` | ZeroTier IP address | Auto-detected |
+| `PUBLIC_IP` | Public IP override | Auto-detected |
+| `ZEROPHONE_DATA` | Data directory | `/var/lib/zerophone` |
 
-### Using Docker Compose (Recommended)
+### Command Line Flags
 
-```bash
-# Start the server
-docker-compose up -d
+| Flag | Description | Default |
+|------|-------------|---------|
+| `-addr` | HTTP listen address | `:9443` |
+| `-server` | Server URL for client mode | None |
+| `-port` | Cluster port | `9443` |
 
-# View logs
-docker-compose logs -f
+## Usage Examples
 
-# Stop the server
-docker-compose down
-```
+### Basic Call Flow
 
-### Using Docker Directly
+1. **User A** opens Control Terminal
+2. **User B** opens Control Terminal
+3. **User A** enters User B's ID and clicks INVITE
+4. **User B** receives incoming call modal
+5. **User B** accepts → WebRTC connection established
+6. Call proceeds with audio streaming
+7. Either party clicks "End Call" → BYE signal → cleanup
 
-```bash
-docker run -d \
-  --name zerophone \
-  -p 8080:8080 \
-  -v zerophone-data:/root \
-  zerophone
-```
+### Multi-Call Scenario
 
-## Systemd Service
+1. User A has active call with User B
+2. User C calls User A (shows in call list)
+3. User A can switch between calls
+4. Each call has independent WebRTC connection
 
-Create `/etc/systemd/system/zerophone.service`:
+### Cluster Mode
 
-```ini
-[Unit]
-Description=ZeroPhone VoIP Server
-After=network.target
+1. Multiple ZeroPhone nodes on ZeroTier network
+2. Nodes discover each other via ZMQ gossip
+3. Calls route through optimal paths
+4. Load balancing across nodes
+5. NAT traversal via TURN nodes
 
-[Service]
-Type=simple
-ExecStart=/opt/zerophone/zerophone --db /var/lib/zerophone/zerophone.db
-Restart=always
+## Signal Types
 
-[Install]
-WantedBy=multi-user.target
-```
+### Core SIP-like Signals
+- `INVITE` - Start call
+- `TRYING` - Processing invite
+- `RINGING` - Remote ringing
+- `OK` - Accept call
+- `REJECT` - Decline call
+- `BYE` - End call
 
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable zerophone
-sudo systemctl start zerophone
-```
+### WebRTC Signals
+- `SDP` - Session description protocol
+- `ICE` - Interactive connectivity establishment
 
-## WebRTC Call Flow
+### Cluster Signals
+- `ROUTE_GOSSIP` - Network metric sharing
+- `NODE_ONLINE` - Node discovery
+- `USER_ONLINE` - User presence
 
-1. Caller sends `CALL_REQUEST` via `/signal` (or WebSocket)
-2. Callee receives `CALL_REQUEST` via WebSocket, UI prompts
-3. If callee answers, `CALL_ACCEPT` is sent
-4. Both peers exchange SDP offers/answers via `/signal`
-5. ICE candidates are exchanged via `/signal`
-6. Once connected, audio streams directly peer-to-peer
+## Debug Features
 
-## Architecture
+### Signal Log
+- Real-time signal monitoring
+- Call state transitions
+- ICE strategy decisions
+- Network routing hints
 
-```
-┌─────────┐     ┌──────────┐     ┌─────────┐
-│ Node A  │────▶│  Server  │────▶│ Node B  │
-│ (WebRTC)│◀────│ (Signaling)◀───│ (WebRTC)│
-└─────────┘     └──────────┘     └─────────┘
-                    │
-              ┌─────────┐
-              │ SQLite  │
-              └─────────┘
-```
+### FSM Visualization
+- Current call state highlighting
+- State transition history
+- Per-call timeline
 
-## Troubleshooting
-
-- Ensure all nodes are on the same ZeroTier network
-- Check firewall allows port 8080
-- For WebRTC to work, STUN servers must be accessible
+### Network Awareness
+- ICE strategy display (`_ice` metadata)
+- Node topology information
+- Load factor indicators
 
 ## Development
 
-The project uses Go modules. To add features or fix bugs:
+### Project Structure
 
-```bash
-git clone https://github.com/your-org/zerophone.git
-cd zerophone
-go mod download
-go build -o zerophone .
+```
+zerophone/
+├── main.go              # HTTP server + main loop
+├── core/                # Signaling core
+│   ├── signal_router.go     # SIP-like routing
+│   ├── call_state_machine.go # Call FSM
+│   └── call_router.go        # Call handling
+├── cluster/             # Distributed features
+│   ├── signal_resover.go    # Route resolution + gossip
+│   ├── discovery.go          # ZMQ discovery
+│   ├── cluster_manager.go    # Cluster orchestration
+│   ├── ws_hub.go            # WebSocket hub
+│   └── zmq.go               # ZMQ transport
+└── static/              # Frontend assets
+    ├── index.html          # Landing page
+    ├── call.html           # Control terminal
+    └── debug.html          # Debug panel
 ```
 
-Run tests:
+### Building
+
+```bash
+go mod tidy
+go build .
+```
+
+### Testing
 
 ```bash
 go test ./...
 ```
 
-The server serves static files from `static/` — the primary UI is `static/index.html`.
+## Troubleshooting
 
----
+### WebSocket Connection Issues
+- Check browser console for connection errors
+- Verify server is running on correct port
+- Check firewall settings
 
-*Built with ❤️ using Go, WebRTC, and ZeroTier.*
+### Call Connection Issues
+- Check ICE server configuration
+- Verify network connectivity
+- Check browser WebRTC permissions
+
+### Cluster Issues
+- Verify ZeroTier network configuration
+- Check ZMQ port accessibility
+- Review cluster logs
+
+### Audio Issues
+- Check microphone permissions
+- Verify WebRTC support
+- Check audio device configuration
+
+## Contributing
+
+1. Follow the 5-layer frontend architecture
+2. Mirror backend FSM logic exactly
+3. Add signal logging for debugging
+4. Update documentation for new features
+
+## License
+
+This project implements distributed telecom signaling protocols for educational and research purposes.
