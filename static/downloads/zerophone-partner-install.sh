@@ -15,7 +15,7 @@ INSTALL_DIR="/opt/zerophone"
 mkdir -p "$INSTALL_DIR"
 
 echo "📥 Fetching ZeroPhone Partner Cluster binary..."
-curl -sSL https://dev.wadiem.cloudns.be/downloads/zerophone-cluster-v2.0.0-linux-amd64.tar.gz -o /tmp/zerophone.tar.gz
+curl -sSL https://github.com/Wadim-cloud/zerophone-server/releases/download/v2.0.1/zerophone-cluster-v2.0.0-linux-amd64.tar.gz -o /tmp/zerophone.tar.gz
 
 tar -xzf /tmp/zerophone.tar.gz -C "$INSTALL_DIR"
 chmod +x "$INSTALL_DIR/zerophone"
