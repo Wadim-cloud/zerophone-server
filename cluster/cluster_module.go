@@ -179,6 +179,10 @@ func (m *ClusterModule) SetWSHub(ws *WSHub) {
 // ─────────────────────────────────────────────
 
 func (m *ClusterModule) Resolve(peerID string) (string, bool) {
+	if m.manager != nil && m.manager.signalResolver != nil {
+		return m.manager.signalResolver.Resolve(peerID)
+	}
+
 	n, ok := m.registry.Get(peerID)
 	if !ok {
 		return "", false

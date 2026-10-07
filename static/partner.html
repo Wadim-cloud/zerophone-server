@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroPhone Partner Program — Start Your Own VoIP Cluster Node</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #060911;
+            --surface: #0b0f19;
+            --surface-card: #121826;
+            --surface-card-hover: #1a2336;
+            --border: #1e293b;
+            --border-glow: #38bdf8;
+            
+            --primary: #38bdf8;
+            --primary-gradient: linear-gradient(135deg, #38bdf8 0%, #818cf8 50%, #c084fc 100%);
+            --secondary: #818cf8;
+            --accent: #c084fc;
+            
+            --success: #34d399;
+            --warning: #fbbf24;
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Ambient Glow Spheres */
+        .ambient-sphere-1 {
+            position: fixed;
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 800px;
+            height: 800px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.12) 0%, rgba(192, 132, 252, 0.05) 50%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .ambient-sphere-2 {
+            position: fixed;
+            bottom: -300px;
+            right: -100px;
+            width: 700px;
+            height: 700px;
+            background: radial-gradient(circle, rgba(129, 140, 248, 0.08) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* Navbar */
+        nav {
+            position: relative;
+            z-index: 10;
+            background: rgba(11, 15, 25, 0.8);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+            padding: 18px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            text-decoration: none;
+        }
+
+        .nav-logo {
+            width: 38px;
+            height: 38px;
+            background: var(--primary-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+        }
+
+        .nav-title {
+            font-size: 18px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: #fff;
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
+        .nav-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+
+        .nav-link:hover {
+            color: var(--primary);
+        }
+
+        /* Hero Section */
+        .hero {
+            position: relative;
+            z-index: 5;
+            padding: 80px 24px 60px;
+            text-align: center;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 16px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 30px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 24px;
+        }
+
+        .hero-title {
+            font-size: 52px;
+            font-weight: 900;
+            line-height: 1.1;
+            letter-spacing: -0.03em;
+            margin-bottom: 24px;
+            background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-title-accent {
+            background: var(--primary-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero-desc {
+            font-size: 18px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            margin-bottom: 40px;
+        }
+
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-primary {
+            background: var(--primary-gradient);
+            color: #000;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 14px 28px;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 25px rgba(56, 189, 248, 0.35);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 35px rgba(56, 189, 248, 0.5);
+        }
+
+        .btn-secondary {
+            background: var(--surface-card);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            font-weight: 600;
+            font-size: 15px;
+            padding: 14px 28px;
+            border-radius: 12px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: var(--surface-card-hover);
+            border-color: var(--primary);
+        }
+
+        /* Feature Section */
+        .features-grid {
+            position: relative;
+            z-index: 5;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 0 24px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 24px;
+        }
+
+        .feature-card {
+            background: rgba(18, 24, 38, 0.6);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.25s ease;
+        }
+
+        .feature-card:hover {
+            border-color: rgba(56, 189, 248, 0.4);
+            transform: translateY(-4px);
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: var(--primary);
+        }
+
+        .feature-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .feature-desc {
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Installation Script Section */
+        .install-section {
+            position: relative;
+            z-index: 5;
+            max-width: 1000px;
+            margin: 60px auto;
+            padding: 0 24px;
+            width: 100%;
+        }
+
+        .install-box {
+            background: rgba(11, 15, 25, 0.9);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 36px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .install-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+
+        .install-title {
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .code-block {
+            background: #04060a;
+            border: 1px solid #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+            word-break: break-all;
+        }
+
+        .btn-copy {
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--primary);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            margin-left: 16px;
+        }
+
+        .btn-copy:hover {
+            background: var(--primary);
+            color: #000;
+        }
+
+        /* Package Download Grid */
+        .downloads-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 24px;
+        }
+
+        .download-card {
+            background: var(--surface-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            text-decoration: none;
+            color: var(--text-main);
+            transition: all 0.2s;
+        }
+
+        .download-card:hover {
+            border-color: var(--primary);
+            background: var(--surface-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .download-meta h4 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .download-meta p {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .download-icon {
+            font-size: 20px;
+            color: var(--primary);
+        }
+    </style>
+</head>
+<body>
+
+<div class="ambient-sphere-1"></div>
+<div class="ambient-sphere-2"></div>
+
+<nav>
+    <a href="/" class="nav-brand">
+        <div class="nav-logo">⚡</div>
+        <span class="nav-title">ZeroPhone Partner Network</span>
+    </a>
+    <div class="nav-links">
+        <a href="/zerophone" class="nav-link">Control Terminal</a>
+        <a href="/babyphone.html" class="nav-link">Babyphone App</a>
+        <a href="/monitor.html" class="nav-link">Telemetry Dashboard</a>
+    </div>
+</nav>
+
+<section class="hero">
+    <div class="hero-badge">🚀 Partner Node Release v2.0.0</div>
+    <h1 class="hero-title">Start Your Own <span class="hero-title-accent">Decentralized VoIP Cluster</span></h1>
+    <p class="hero-desc">Deploy ZeroPhone cluster nodes, route WebRTC calls using built-in Dijkstra shortest-path algorithms, and join our global high-availability telecom mesh network.</p>
+    <div class="hero-actions">
+        <a href="#downloads" class="btn-primary">
+            <span>📦</span> Download Cluster Engine
+        </a>
+        <a href="#quickstart" class="btn-secondary">
+            <span>⚡</span> 1-Command Deployment
+        </a>
+    </div>
+</section>
+
+<section class="features-grid">
+    <div class="feature-card">
+        <div class="feature-icon">🗺</div>
+        <div class="feature-title">Dijkstra Shortest Path Engine</div>
+        <div class="feature-desc">Built-in algorithmic graph solver selects the lowest-latency mesh route across ZeroTier nodes dynamically with live cost edge updates.</div>
+    </div>
+
+    <div class="feature-card">
+        <div class="feature-icon">🛡</div>
+        <div class="feature-title">SIP FSM & ICE Resiliency</div>
+        <div class="feature-desc">Full RFC-compliant SIP state machine with candidate buffering and fallback relays so WebRTC media streams connect without hanging calls.</div>
+    </div>
+
+    <div class="feature-card">
+        <div class="feature-icon">💎</div>
+        <div class="feature-title">Monetize Cluster Routing</div>
+        <div class="feature-desc">Partner nodes automatically earn routing fees for handling multi-hop WebRTC signaling and media relay traffic.</div>
+    </div>
+</section>
+
+<section class="install-section" id="quickstart">
+    <div class="install-box">
+        <div class="install-header">
+            <div class="install-title">⚡ 1-Command Automated Node Deployment</div>
+        </div>
+        <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px;">Run this command on any Rocky Linux, Ubuntu, Debian, or RHEL server to compile, install systemd units, and join the cluster automatically:</p>
+        <div class="code-block">
+            <span id="cmdScript">curl -sSL https://dev.wadiem.cloudns.be/zerophone-partner-install.sh | bash</span>
+            <button class="btn-copy" onclick="copyCommand()">Copy Command</button>
+        </div>
+
+        <div class="install-header" id="downloads" style="margin-top: 36px;">
+            <div class="install-title">📦 Download Precompiled Binaries & Source Packages</div>
+        </div>
+
+        <div class="downloads-grid">
+            <a href="/static/downloads/zerophone-cluster-v2.0.0-linux-amd64.tar.gz" class="download-card" download>
+                <div class="download-meta">
+                    <h4>zerophone-cluster-v2.0.0-linux-amd64.tar.gz</h4>
+                    <p>Precompiled binary for Linux 64-bit (8.9 MB)</p>
+                </div>
+                <div class="download-icon">⬇</div>
+            </a>
+
+            <a href="/static/downloads/zerophone-cluster-v2.0.0-source.zip" class="download-card" download>
+                <div class="download-meta">
+                    <h4>zerophone-cluster-v2.0.0-source.zip</h4>
+                    <p>Complete Go source codebase with Dijkstra engine (12 MB)</p>
+                </div>
+                <div class="download-icon">⬇</div>
+            </a>
+        </div>
+    </div>
+</section>
+
+<script>
+    function copyCommand() {
+        const text = document.getElementById('cmdScript').innerText;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('Command copied to clipboard!');
+        });
+    }
+</script>
+</body>
+</html>

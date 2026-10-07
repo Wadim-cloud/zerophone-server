@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 
+	"zerophone/bridge"
 	"zerophone/cluster"
 	"zerophone/core"
 )
@@ -25,6 +26,7 @@ var (
 	wsHub         *cluster.WSHub
 	signalRouter  *core.SignalRouter
 	callState     *core.CallStateMachine
+	sipBridge     *bridge.SIPBridge
 
 	nodeID  string
 	localIP string
@@ -65,20 +67,40 @@ func main() {
 		clusterModule.AttachSignalRouter(signalRouter)
 		// Connect WSHub to ClusterModule for signal routing
 		clusterModule.SetWSHub(wsHub)
+	} else {
+		// Standalone mode: route signals directly over WebSocket transport.
+		signalRouter.SetTransport(wsHub)
 	}
 
 	// Attach SignalRouter to WSHub for incoming message dispatch
 	wsHub.AttachSignalRouter(signalRouter)
 
+	// Initialize SIP bridge endpoints (for go-b2bua -> ZeroPhone integration)
+	sipBridge = bridge.NewSIPBridge(signalRouter)
+
 	// Register routes
 	router.HandleFunc("/", handleIndex)
 	router.HandleFunc("/call.html", handleCallHTML)
 	router.HandleFunc("/debug.html", handleDebugHTML)
+	router.HandleFunc("/monitor.html", handleMonitorHTML)
+	router.HandleFunc("/monitor", handleMonitorHTML)
+	router.HandleFunc("/partner.html", handlePartnerHTML)
+	router.HandleFunc("/partner", handlePartnerHTML)
 	router.HandleFunc("/ws/{user_id}", cluster.HandleWebSocket)
+	router.HandleFunc("/zerophone/ws/{user_id}", cluster.HandleWebSocket)
 	router.HandleFunc("/call", handleCall)
 	router.HandleFunc("/call/signal", handleCallSignal)
 	router.HandleFunc("/call/respond", handleCallResponse)
 	router.HandleFunc("/call/end", handleCallEnd)
+	router.HandleFunc("/sip/map", sipBridge.HandleMap)
+	router.HandleFunc("/sip/register", sipBridge.HandleRegister)
+	router.HandleFunc("/sip/unregister", sipBridge.HandleUnregister)
+	router.HandleFunc("/sip/sessions", sipBridge.HandleSessions)
+	router.HandleFunc("/sip/media/capabilities", sipBridge.HandleMediaCapabilities)
+	router.HandleFunc("/sip/media/sessions", sipBridge.HandleMediaSessions)
+	router.HandleFunc("/sip/media/workers", sipBridge.HandleMediaWorkers)
+	router.HandleFunc("/sip/invite", sipBridge.HandleInvite)
+	router.HandleFunc("/sip/bye", sipBridge.HandleBYE)
 	router.HandleFunc("/status", handleStatus)
 	router.HandleFunc("/nodes", handleNodes)
 	router.HandleFunc("/presence", handlePresence)
@@ -179,6 +201,14 @@ func handleCallHTML(w http.ResponseWriter, r *http.Request) {
 
 func handleDebugHTML(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "./static/debug.html")
+}
+
+func handleMonitorHTML(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./static/monitor.html")
+}
+
+func handlePartnerHTML(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "./static/partner.html")
 }
 
 func handleCall(w http.ResponseWriter, r *http.Request) {

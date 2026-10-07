@@ -164,6 +164,9 @@ func (sm *CallStateMachine) transition(c *CallSession, s Signal) CallState {
 	// ---------------- ACTIVE ----------------
 	case StateActive:
 		switch s.Type {
+		case SignalAck:
+			// ACK received, connection fully confirmed
+			return StateActive
 		case SignalBye:
 			return StateEnding
 		}

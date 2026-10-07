@@ -18,6 +18,7 @@ const (
 	SignalTrying  SignalType = "TRYING"
 	SignalRinging SignalType = "RINGING"
 	SignalOK      SignalType = "OK"
+	SignalAck     SignalType = "ACK"
 	SignalReject  SignalType = "REJECT"
 	SignalBye     SignalType = "BYE"
 

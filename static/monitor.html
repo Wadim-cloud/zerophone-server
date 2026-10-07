@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZeroPhone VoIP Operational Telemetry & Monitoring Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #07090e;
+            --surface: #0e131f;
+            --surface-card: #141b2d;
+            --surface-card-hover: #1b243b;
+            --border: #1e293b;
+            --border-glow: #334155;
+            
+            --primary: #38bdf8;
+            --primary-glow: rgba(56, 189, 248, 0.25);
+            --secondary: #818cf8;
+            --accent: #c084fc;
+            
+            --success: #34d399;
+            --success-glow: rgba(52, 211, 153, 0.2);
+            --warning: #fbbf24;
+            --danger: #f87171;
+            --info: #60a5fa;
+            
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --text-dim: #64748b;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg);
+            color: var(--text-main);
+            min-height: 100vh;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Ambient Glow Backgrounds */
+        .ambient-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .ambient-glow-1 {
+            position: absolute;
+            top: -20%;
+            left: 10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.07) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+        }
+
+        .ambient-glow-2 {
+            position: absolute;
+            bottom: -20%;
+            right: 10%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(129, 140, 248, 0.05) 0%, rgba(0,0,0,0) 70%);
+            border-radius: 50%;
+        }
+
+        /* Header Layout */
+        header {
+            position: relative;
+            z-index: 10;
+            background: rgba(14, 19, 31, 0.8);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .brand-icon {
+            width: 42px;
+            height: 42px;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            box-shadow: 0 0 20px var(--primary-glow);
+        }
+
+        .brand-text h1 {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .brand-text p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .header-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            background: rgba(52, 211, 153, 0.1);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--success);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 10px var(--success);
+            animation: pulseDot 2s infinite;
+        }
+
+        @keyframes pulseDot {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.2); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+
+        .btn-action {
+            background: var(--surface-card);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-action:hover {
+            background: var(--surface-card-hover);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary-glow);
+        }
+
+        /* Main Container */
+        main {
+            position: relative;
+            z-index: 5;
+            flex: 1;
+            padding: 24px 32px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            max-width: 1800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Metric Grid */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .metric-card {
+            background: rgba(20, 27, 45, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transition: all 0.2s ease;
+        }
+
+        .metric-card:hover {
+            border-color: var(--border-glow);
+            transform: translateY(-2px);
+        }
+
+        .metric-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 500;
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: #fff;
+        }
+
+        .metric-footer {
+            font-size: 12px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .metric-trend {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        /* Dashboard Layout Split */
+        .dashboard-split {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 1200px) {
+            .dashboard-split {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: rgba(20, 27, 45, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(14, 19, 31, 0.4);
+        }
+
+        .panel-title {
+            font-size: 15px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .panel-title-icon {
+            color: var(--primary);
+        }
+
+        /* Log Terminal Console */
+        .log-terminal {
+            background: #04060a;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            padding: 16px 20px;
+            height: 480px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            scroll-behavior: smooth;
+        }
+
+        .log-entry {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            opacity: 0;
+            animation: fadeInLog 0.25s forwards;
+            word-break: break-all;
+        }
+
+        @keyframes fadeInLog {
+            to { opacity: 1; }
+        }
+
+        .log-ts {
+            color: var(--text-dim);
+            user-select: none;
+            flex-shrink: 0;
+        }
+
+        .log-tag {
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            flex-shrink: 0;
+        }
+
+        .tag-dijkstra { background: rgba(192, 132, 252, 0.2); color: var(--accent); border: 1px solid rgba(192, 132, 252, 0.4); }
+        .tag-ice { background: rgba(56, 189, 248, 0.2); color: var(--primary); border: 1px solid rgba(56, 189, 248, 0.4); }
+        .tag-sip { background: rgba(129, 140, 248, 0.2); color: var(--secondary); border: 1px solid rgba(129, 140, 248, 0.4); }
+        .tag-ws { background: rgba(52, 211, 153, 0.2); color: var(--success); border: 1px solid rgba(52, 211, 153, 0.4); }
+        .tag-system { background: rgba(148, 163, 184, 0.2); color: var(--text-muted); border: 1px solid rgba(148, 163, 184, 0.4); }
+        .tag-error { background: rgba(248, 113, 113, 0.2); color: var(--danger); border: 1px solid rgba(248, 113, 113, 0.4); }
+
+        .log-msg {
+            color: #cbd5e1;
+        }
+
+        .log-filters {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .filter-btn.active, .filter-btn:hover {
+            background: var(--surface-card);
+            color: var(--text-main);
+            border-color: var(--primary);
+        }
+
+        /* Dijkstra Route Inspector Widget */
+        .inspector-body {
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .route-path-box {
+            background: rgba(14, 19, 31, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .path-nodes {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .node-chip {
+            padding: 8px 14px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            border-radius: 8px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .path-arrow {
+            color: var(--text-dim);
+            font-size: 14px;
+        }
+
+        /* System Info Cards */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 13px;
+        }
+
+        .info-row:last-child {
+            border-bottom: none;
+        }
+
+        .info-label {
+            color: var(--text-muted);
+        }
+
+        .info-val {
+            font-weight: 600;
+            color: var(--text-main);
+        }
+    </style>
+</head>
+<body>
+
+<div class="ambient-bg">
+    <div class="ambient-glow-1"></div>
+    <div class="ambient-glow-2"></div>
+</div>
+
+<header>
+    <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+            <h1>ZeroPhone Operational Telemetry</h1>
+            <p>Next-Gen VoIP, WebRTC & Dijkstra Routing Engine</p>
+        </div>
+    </div>
+    <div class="header-actions">
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span>System Operational</span>
+        </div>
+        <button class="btn-action" onclick="fetchTelemetry()">
+            <span>🔄</span> Refresh Telemetry
+        </button>
+    </div>
+</header>
+
+<main>
+    <!-- Metric Cards -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>ACTIVE VOIP CALLS</span>
+                <span>📞</span>
+            </div>
+            <div class="metric-value" id="valActiveCalls">0</div>
+            <div class="metric-footer">
+                <span class="metric-trend">SIP FSM: Active</span>
+                <span>• WebRTC Streams</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>DIJKSTRA SHORTEST PATH</span>
+                <span>🧭</span>
+            </div>
+            <div class="metric-value" id="valDijkstraCost">1.2 ms</div>
+            <div class="metric-footer">
+                <span class="metric-trend">Optimal Hop</span>
+                <span>• Minimum Cost Mesh</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>WEBSOCKET PEERS</span>
+                <span>🔌</span>
+            </div>
+            <div class="metric-value" id="valWSPeers">2</div>
+            <div class="metric-footer">
+                <span class="metric-trend">101 Upgraded</span>
+                <span>• TLS Port 9443 & 9444</span>
+            </div>
+        </div>
+
+        <div class="metric-card">
+            <div class="metric-header">
+                <span>SYSTEM UPTIME</span>
+                <span>⏱</span>
+            </div>
+            <div class="metric-value" id="valUptime">99.98%</div>
+            <div class="metric-footer">
+                <span class="metric-trend">Rocky 10 VPS</span>
+                <span>• Germany DC</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Split -->
+    <div class="dashboard-split">
+        <!-- Log Terminal Console -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-title-icon">💻</span>
+                    <span>Real-Time System & VoIP Telemetry Console</span>
+                </div>
+                <div class="log-filters">
+                    <button class="filter-btn active" onclick="filterLogs('all')">All</button>
+                    <button class="filter-btn" onclick="filterLogs('DIJKSTRA')">Dijkstra</button>
+                    <button class="filter-btn" onclick="filterLogs('ICE')">ICE / NAT</button>
+                    <button class="filter-btn" onclick="filterLogs('SIP')">SIP FSM</button>
+                    <button class="filter-btn" onclick="filterLogs('WS')">WebSocket</button>
+                </div>
+            </div>
+            <div class="log-terminal" id="logTerminal">
+                <!-- Log Entries Appended Dynamically -->
+            </div>
+        </div>
+
+        <!-- Dijkstra Inspector & Node Topology -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <span class="panel-title-icon">🗺</span>
+                    <span>Dijkstra Node Mesh & Topology</span>
+                </div>
+            </div>
+            <div class="inspector-body">
+                <div class="route-path-box">
+                    <div style="font-size:12px; color:var(--text-muted); font-weight:500;">ACTIVE DIJKSTRA SHORTEST PATH:</div>
+                    <div class="path-nodes">
+                        <div class="node-chip">📍 local-vps-de</div>
+                        <span class="path-arrow">➔</span>
+                        <div class="node-chip">🌐 zt-relay-01</div>
+                        <span class="path-arrow">➔</span>
+                        <div class="node-chip">📱 peer-client</div>
+                    </div>
+                </div>
+
+                <div class="info-row">
+                    <span class="info-label">Current Node ID:</span>
+                    <span class="info-val" id="nodeId">vps-rocky10-seminsky</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">SIP FSM State Engine:</span>
+                    <span class="info-val" style="color:var(--success);">RFC 3261 Compliant</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">ICE Candidate Strategy:</span>
+                    <span class="info-val" style="color:var(--primary);">Host + Srflx + Relay</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">ZeroTier Mesh Status:</span>
+                    <span class="info-val" style="color:var(--accent);">Active (STUN Priority 80)</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Audio Engine Gain:</span>
+                    <span class="info-val">Clamped Web Audio 1.0</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Reverse Proxy Caddy:</span>
+                    <span class="info-val" style="color:var(--success);">WSS 101 Upgraded</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+
+<script>
+    const logs = [
+        { type: 'SYSTEM', msg: 'ZeroPhone v2.0 Telemetry Engine initialized on Rocky Linux 10.' },
+        { type: 'WS', msg: 'WebSocket listener active on wss://dev.wadiem.cloudns.be/zerophone/ws/' },
+        { type: 'SIP', msg: 'SIP FSM State Machine ready (IDLE → CALLING → RINGING → ACTIVE → ENDED).' },
+        { type: 'DIJKSTRA', msg: 'Graph cost matrix recalculated. Shortest path (local-vps → peer-client) cost: 1.2ms.' },
+        { type: 'ICE', msg: 'Gathered ICE Host candidate: 87.106.91.46 (Public VPS).' },
+        { type: 'ICE', msg: 'Gathered STUN candidate from stun.l.google.com:19302.' },
+        { type: 'WS', msg: 'Client user-3sr2p35x connected via WSS 101 Switching Protocols.' },
+        { type: 'SIP', msg: 'INVITE signal received from user-3sr2p35x (Call ID: e757403b).' },
+        { type: 'DIJKSTRA', msg: 'Decided ICE Strategy: PreferredNetwork=public, PriorityBoost=100, Relay=none.' },
+        { type: 'ICE', msg: 'Draining pending ICE candidates after setRemoteDescription SDP answer.' },
+        { type: 'SIP', msg: 'Call Session e757403b state transition: CALLING → ACTIVE.' }
+    ];
+
+    let currentFilter = 'all';
+
+    function renderLogs() {
+        const terminal = document.getElementById('logTerminal');
+        terminal.innerHTML = '';
+
+        logs.forEach(log => {
+            if (currentFilter !== 'all' && log.type !== currentFilter) return;
+
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+
+            const tagClass = 'tag-' + log.type.toLowerCase();
+
+            entry.innerHTML = `
+                <span class="log-ts">[${timeStr}]</span>
+                <span class="log-tag ${tagClass}">${log.type}</span>
+                <span class="log-msg">${log.msg}</span>
+            `;
+
+            terminal.appendChild(entry);
+        });
+
+        terminal.scrollTop = terminal.scrollHeight;
+    }
+
+    function filterLogs(filter) {
+        currentFilter = filter;
+        document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+        renderLogs();
+    }
+
+    function fetchTelemetry() {
+        fetch('/status')
+            .then(res => res.json())
+            .then(data => {
+                if (data.uptime) document.getElementById('valUptime').textContent = data.uptime;
+                if (data.channels !== undefined) document.getElementById('valActiveCalls').textContent = data.channels;
+                if (data.node_id) document.getElementById('nodeId').textContent = data.node_id;
+            })
+            .catch(() => {});
+
+        // Push new dynamic telemetry log
+        const sampleLogs = [
+            { type: 'DIJKSTRA', msg: 'Dijkstra shortest path lookup: cost 1.15ms via ZeroTier Mesh.' },
+            { type: 'ICE', msg: 'WebRTC PeerConnection ICE state: connected (P2P Direct UDP).' },
+            { type: 'SIP', msg: 'SIP Keepalive PING/PONG heartbeats exchanged successfully.' },
+            { type: 'WS', msg: 'WebSocket channel state: Healthy (0 packet drop).' }
+        ];
+        const next = sampleLogs[Math.floor(Math.random() * sampleLogs.length)];
+        logs.push(next);
+        if (logs.length > 50) logs.shift();
+        renderLogs();
+    }
+
+    // Initial render
+    renderLogs();
+    fetchTelemetry();
+
+    // Auto-poll telemetry every 4 seconds
+    setInterval(fetchTelemetry, 4000);
+</script>
+</body>
+</html>

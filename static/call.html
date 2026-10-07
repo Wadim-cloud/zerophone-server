@@ -306,6 +306,28 @@
         </div>
 
         <div class="controls">
+            <input id="sipExtension" placeholder="SIP Extension (e.g. 1001)" style="
+                width: 100%;
+                padding: 12px;
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                color: #c9d1d9;
+                margin-bottom: 8px;
+            " />
+            <select id="sipPickupPolicy" style="
+                width: 100%;
+                padding: 10px;
+                background: #161b22;
+                border: 1px solid #30363d;
+                border-radius: 8px;
+                color: #c9d1d9;
+                margin-bottom: 8px;
+            ">
+                <option value="single">single (only first answer wins)</option>
+                <option value="shared">shared (allow multiple users to join)</option>
+            </select>
+            <button class="btn" onclick="registerSIPExtension()" style="background: #1f6feb; color: white;">Register SIP Extension</button>
             <input id="targetUser" placeholder="Target User ID" style="
                 width: 100%;
                 padding: 12px;
@@ -354,6 +376,11 @@
 </div>
 
 <script>
+// Mobile WebRTC strictly requires Secure Context (HTTPS)
+if (!window.isSecureContext && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+    alert("CRITICAL WARNING: You are not using a secure connection (HTTPS). Mobile browsers will aggressively block microphone access. Please switch to https://dev.wadiem.cloudns.be");
+    console.error("Insecure Context: getUserMedia will fail!");
+}
 // ZeroPhone Control Terminal JavaScript loaded
 
 /* =====================================================
@@ -394,7 +421,6 @@ let pendingIceCandidates = []; // Buffer ICE candidates before PC is ready
 let ringingAudio = null;
 let audioUnlocked = false;
 
-// Global audio unlock (required by browser security)
 // 🔓 Unlock audio (required once per session)
 function unlockAudio() {
     if (audioUnlocked) return;
@@ -403,6 +429,12 @@ function unlockAudio() {
     ctx.resume().then(() => {
         console.log("🔊 Audio unlocked");
         audioUnlocked = true;
+        
+        // Mobile iOS Safari workaround: immediately pre-play the remoteAudio element
+        const remoteAudio = document.getElementById("remoteAudio");
+        if (remoteAudio) {
+            remoteAudio.play().catch(e => console.warn("Pre-play blocked:", e));
+        }
     }).catch(err => {
         console.error("Audio unlock failed:", err);
     });
@@ -412,54 +444,53 @@ function unlockAudio() {
 function createPeerConnection() {
     pc = new RTCPeerConnection({
         iceServers: [
-            { urls: "stun:stun.wadiem.cloudns.be" },
-            { urls: "stun:stun.l.google.com:19302" }
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+            {
+                urls: [
+                    "turn:87.106.91.46:3478?transport=udp",
+                    "turn:87.106.91.46:3478?transport=tcp"
+                ],
+                username: "wadiem",
+                credential: "Wadiem123!"
+            }
         ]
     });
 
     console.log("WEBRTC: PeerConnection created");
 
-    // 🔊 Handle remote audio tracks
+    // 🔊 Handle remote audio tracks (supports Unified Plan without stream wrapper)
     pc.ontrack = (event) => {
-        console.log("WEBRTC: Remote track received - kind:", event.track.kind, "streams:", event.streams.length);
+        console.log("WEBRTC: Remote track received - kind:", event.track.kind, "streams:", event.streams ? event.streams.length : 0);
 
-        if (event.streams.length > 0) {
-            const audio = document.getElementById("remoteAudio");
-            if (audio) {
-                audio.srcObject = event.streams[0];
-                audio.muted = false;
-                audio.volume = 1.0;
-                audio.playsInline = true;
+        const audio = document.getElementById("remoteAudio");
+        if (audio) {
+            let stream = (event.streams && event.streams[0]) ? event.streams[0] : new MediaStream([event.track]);
+            audio.srcObject = stream;
+            audio.muted = false;
+            audio.volume = 1.0;
+            audio.playsInline = true;
 
-                console.log("AUDIO STATE:", {
-                    muted: audio.muted,
-                    volume: audio.volume,
-                    paused: audio.paused
-                });
+            audio.play().then(() => {
+                console.log("WEBRTC: Remote audio playing successfully");
+                startAudioEnergyMonitoring(stream);
+            }).catch(err => {
+                console.warn("WEBRTC: Autoplay blocked, audio will play after user interaction:", err.message);
+            });
 
-                audio.play().then(() => {
-                    console.log("WEBRTC: Remote audio playing successfully");
-
-                    // Start audio energy monitoring
-                    startAudioEnergyMonitoring(event.streams[0]);
-                }).catch(err => {
-                    console.warn("WEBRTC: Autoplay blocked, audio will play after user interaction:", err.message);
-                });
-
-                // Store reference for cleanup
-                audio._stream = event.streams[0];
-            }
+            audio._stream = stream;
         }
     };
 
     // ❄️ Handle outgoing ICE candidates
     pc.onicecandidate = (event) => {
         if (event.candidate) {
-            console.log("❄️ Sending ICE candidate:", event.candidate.candidate.substring(0, 50) + "...");
+            const targetPeer = currentPeer || (appState.calls[callID] ? (appState.calls[callID].from === appState.localUserId ? appState.calls[callID].to : appState.calls[callID].from) : '');
+            console.log("❄️ Sending ICE candidate to:", targetPeer);
             sendSignal({
                 type: "ICE",
                 call_id: callID,
-                to: currentPeer,
+                to: targetPeer,
                 from: appState.localUserId,
                 data: {
                     candidate: event.candidate.candidate,
@@ -487,11 +518,19 @@ function createPeerConnection() {
 // 🎤 Get microphone and attach to PeerConnection
 async function initLocalMedia() {
     try {
-        console.log("WEBRTC: Requesting microphone access");
-        localStream = await navigator.mediaDevices.getUserMedia({
-            audio: true,
-            video: false
-        });
+        if (!localStream) {
+            console.log("WEBRTC: Requesting microphone access");
+            localStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                },
+                video: false
+            });
+        } else {
+            console.log("WEBRTC: Reusing persistent microphone stream");
+        }
 
         console.log("WEBRTC: Local stream obtained with", localStream.getTracks().length, "tracks");
 
@@ -588,11 +627,20 @@ function createCallState(callId, from, to) {
    LAYER 1: TRANSPORT
    ===================================================== */
 function connectWS() {
-    ws = new WebSocket(`wss://${location.host}/ws/${userId}`);
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsPath = location.pathname.startsWith('/zerophone') ? `/zerophone/ws/${userId}` : `/ws/${userId}`;
+    ws = new WebSocket(`${protocol}//${location.host}${wsPath}`);
 
     ws.onopen = () => {
         log('TRANSPORT', 'WebSocket connected as ' + userId);
         appState.localUserId = userId;
+        const urlParams = new URLSearchParams(window.location.search);
+        const autoExt = (urlParams.get('ext') || '').trim();
+        if (autoExt) {
+            const extInput = document.getElementById('sipExtension');
+            if (extInput) extInput.value = autoExt;
+            registerSIPExtension();
+        }
     };
 
     ws.onmessage = async (evt) => {
@@ -612,6 +660,41 @@ function connectWS() {
     ws.onerror = (e) => {
         log('TRANSPORT', 'WebSocket error');
     };
+}
+
+async function registerSIPExtension() {
+    const extInput = document.getElementById('sipExtension');
+    if (!extInput) return;
+    const extension = extInput.value.trim();
+    if (!extension) {
+        log('SIP', 'Enter extension first');
+        return;
+    }
+    if (!appState.localUserId) {
+        log('SIP', 'No local user id yet');
+        return;
+    }
+    const policyEl = document.getElementById('sipPickupPolicy');
+    const policy = policyEl ? policyEl.value : 'single';
+    try {
+        const resp = await fetch('/sip/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                extension: extension,
+                user_id: appState.localUserId,
+                policy: policy
+            })
+        });
+        if (!resp.ok) {
+            const txt = await resp.text();
+            log('SIP', 'Register failed:', txt);
+            return;
+        }
+        log('SIP', `Registered ext ${extension} -> ${appState.localUserId} (${policy})`);
+    } catch (e) {
+        log('SIP', 'Register error:', e.message);
+    }
 }
 
 // 📡 Send signal helper
@@ -869,6 +952,12 @@ async function onINVITE(signal) {
     callID = signal.call_id;
     currentPeer = signal.from;
 
+    const existingCall = appState.calls[callID];
+    if (existingCall && existingCall.state === CallState.ACTIVE && pc) {
+        console.log("🔄 Received duplicate INVITE for active call!");
+        return; // Skip UI ringing
+    }
+
     // Store SDP offer for later use - SDP comes from backend in data field
     console.log("Processing INVITE signal:", signal);
     const call = createCallState(callID, signal.from, appState.localUserId);
@@ -878,6 +967,15 @@ async function onINVITE(signal) {
     console.log("Stored call state with SDP:", call.sdp ? "YES (" + (call.sdp ? call.sdp.substring(0, 50) + "..." : "null") + ")" : "NO", call);
 
     setCallState(callID, CallState.INVITE, signal.from, false); // incoming
+    
+    // Notify caller that we are ringing
+    sendSignal({
+        type: 'RINGING',
+        call_id: callID,
+        to: signal.from,
+        from: appState.localUserId
+    });
+    
     showIncomingModal(signal.from, callID);
 }
 
@@ -893,6 +991,13 @@ async function onOK(signal) {
                 sdp: signal.sdp
             });
             console.log("✅ Call fully established, PC state:", pc.signalingState, "ICE state:", pc.iceConnectionState);
+            
+            // Transition the call state to ACTIVE for the caller
+            setCallState(signal.call_id, CallState.ACTIVE);
+            
+            // Start QoS monitoring
+            startQosMonitoring(pc);
+            await processPendingIceCandidates();
         } else {
             console.error("❌ No SDP in OK signal!");
         }
@@ -938,9 +1043,9 @@ async function onICE(signal) {
         return;
     }
 
-    // If no PeerConnection yet, buffer the candidate data
-    if (!pc) {
-        console.log("❄️ Buffering ICE candidate - PC not ready yet");
+    // If no PeerConnection yet or remote description not set, buffer the candidate data
+    if (!pc || !pc.remoteDescription || !pc.remoteDescription.type) {
+        console.log("❄️ Buffering ICE candidate - PC or remote description not ready yet");
         pendingIceCandidates.push(iceData);
         return;
     }
@@ -1112,15 +1217,19 @@ async function acceptCall() {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
+        const targetPeer = (call && call.from) ? call.from : currentPeer;
         sendSignal({
             type: 'OK',
             call_id: callId,
             from: appState.localUserId,
-            to: currentPeer,
+            to: targetPeer,
             sdp: answer.sdp
         });
 
         console.log("📞 Call accepted, sent SDP answer");
+        
+        // Start QoS monitoring
+        startQosMonitoring(pc);
     } catch(err) {
         console.error("Failed to accept call:", err);
     }
@@ -1281,6 +1390,85 @@ document.addEventListener("click", () => {
         audio.play().catch(() => {});
     }
 }, { once: true });
+
+// QoS Monitoring Telemetry
+let qosInterval = null;
+function startQosMonitoring(peerConnection) {
+    if (qosInterval) clearInterval(qosInterval);
+    if (!peerConnection) return;
+    
+    console.log("📊 Starting QoS Telemetry monitoring...");
+    let lastBytesReceived = 0;
+    let lastTimestamp = 0;
+    
+    // Add UI container for stats if it doesn't exist
+    let statsContainer = document.getElementById('qos-stats');
+    if (!statsContainer) {
+        const controls = document.querySelector('.controls');
+        statsContainer = document.createElement('div');
+        statsContainer.id = 'qos-stats';
+        statsContainer.style = 'margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.5); border-radius: 8px; font-size: 0.9em; font-family: monospace; display: none;';
+        if (controls) controls.appendChild(statsContainer);
+    }
+    
+    statsContainer.style.display = 'block';
+
+    qosInterval = setInterval(async () => {
+        if (peerConnection.signalingState === 'closed') {
+            clearInterval(qosInterval);
+            statsContainer.style.display = 'none';
+            return;
+        }
+
+        try {
+            const stats = await peerConnection.getStats(null);
+            let packetLoss = 0;
+            let jitter = 0;
+            let rtt = 0;
+            let bitrate = 0;
+
+            stats.forEach(report => {
+                if (report.type === 'inbound-rtp' && report.kind === 'audio') {
+                    const packetsLost = report.packetsLost || 0;
+                    const packetsReceived = report.packetsReceived || 0;
+                    if (packetsReceived + packetsLost > 0) {
+                        packetLoss = ((packetsLost / (packetsReceived + packetsLost)) * 100).toFixed(1);
+                    }
+                    jitter = (report.jitter * 1000).toFixed(1); // convert to ms
+                    
+                    // Calculate bitrate
+                    if (lastTimestamp > 0) {
+                        const bytesReceived = report.bytesReceived;
+                        const timeDiff = report.timestamp - lastTimestamp;
+                        const bitDiff = (bytesReceived - lastBytesReceived) * 8;
+                        bitrate = Math.round(bitDiff / timeDiff); // kbps
+                    }
+                    lastBytesReceived = report.bytesReceived;
+                    lastTimestamp = report.timestamp;
+                }
+                
+                if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+                    rtt = (report.currentRoundTripTime * 1000).toFixed(1); // ms
+                }
+            });
+
+            // Update UI
+            let quality = '🟢 Excellent';
+            if (packetLoss > 2 || jitter > 30 || rtt > 150) quality = '🟡 Fair';
+            if (packetLoss > 5 || jitter > 50 || rtt > 300) quality = '🔴 Poor';
+
+            statsContainer.innerHTML = `
+                <div><strong>Signal Quality:</strong> ${quality}</div>
+                <div style="color: #aaa; margin-top: 4px;">
+                    Loss: ${packetLoss}% | Jitter: ${jitter}ms<br>
+                    RTT: ${rtt}ms | Bitrate: ${bitrate} kbps
+                </div>
+            `;
+        } catch (e) {
+            console.warn("📊 QoS monitoring error:", e);
+        }
+    }, 2000);
+}
 
 // Audio energy monitoring
 function startAudioEnergyMonitoring(stream) {

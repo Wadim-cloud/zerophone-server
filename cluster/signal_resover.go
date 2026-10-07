@@ -218,6 +218,19 @@ func (r *SignalResolver) Resolve(peerID string) (string, bool) {
 		return target.Addr, true
 	}
 
+	// 🧭 Dijkstra shortest path algorithm lookup across cluster edges
+	if path, cost := r.shortestPath(r.localNodeID, peerID); len(path) > 1 && cost < math.MaxFloat64 {
+		nextHopID := path[1]
+		if nextHopNode, ok := r.nodes[nextHopID]; ok && r.isHealthy(nextHopNode) {
+			log.Printf("[DIJKSTRA RESOLVER] shortest path %s → %s via %s (cost: %.2f)",
+				r.localNodeID, peerID, nextHopID, cost)
+			if r.OnRouteChosen != nil {
+				go r.OnRouteChosen(r.localNodeID, peerID, nextHopID)
+			}
+			return nextHopNode.Addr, true
+		}
+	}
+
 	// 🔁 fallback to relay
 	relay := r.findBestRelay(target)
 	if relay != nil {
